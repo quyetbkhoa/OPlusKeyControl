@@ -11,6 +11,7 @@ import io.github.libxposed.api.XposedModule;
 public final class VectorProbe extends XposedModule {
     private PolicyInputProbe policyProbe;
     private boolean policyAttached;
+    private RootPolicyBackend runtime;
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
@@ -19,6 +20,7 @@ public final class VectorProbe extends XposedModule {
                     + " process=" + param.getProcessName());
         }
         if (param.isSystemServer()) {
+            if (BuildConfig.POLICY_RUNTIME) attachRuntime(Thread.currentThread().getContextClassLoader());
             if (BuildConfig.POLICY_PROBE) {
                 attachPolicy(Thread.currentThread().getContextClassLoader(), "module_loaded");
             }
@@ -35,8 +37,15 @@ public final class VectorProbe extends XposedModule {
 
     @Override
     public void onSystemServerStarting(SystemServerStartingParam param) {
+        if (BuildConfig.POLICY_RUNTIME) attachRuntime(param.getClassLoader());
         if (!BuildConfig.POLICY_PROBE) return;
         attachPolicy(param.getClassLoader(), "system_server_starting");
+    }
+
+    private synchronized void attachRuntime(ClassLoader loader) {
+        if (!BuildConfig.POLICY_RUNTIME || android.os.Build.VERSION.SDK_INT != 36) return;
+        if (runtime == null) runtime = new RootPolicyBackend(this);
+        runtime.install(loader);
     }
 
     private synchronized void attachPolicy(ClassLoader loader, String stage) {

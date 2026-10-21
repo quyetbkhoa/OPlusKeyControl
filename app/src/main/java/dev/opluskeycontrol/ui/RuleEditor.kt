@@ -62,7 +62,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
     if (confirmTest && action != null) AlertDialog(onDismissRequest = { confirmTest = false },
         title = { Text(stringResource(R.string.test_action)) },
         text = { Text(stringResource(R.string.test_action_confirmation, stringResource(action.kind.label()))) },
-        confirmButton = { TextButton(onClick = { confirmTest = false; scope.launch { app.actions.execute(action, true) } }) { Text(stringResource(R.string.test_action)) } },
+        confirmButton = { TextButton(onClick = { confirmTest = false; scope.launch { app.actions.execute(action, true, config.tier == Tier.ROOT); app.bridge.refresh() } }) { Text(stringResource(R.string.test_action)) } },
         dismissButton = { TextButton(onClick = { confirmTest = false }) { Text(stringResource(R.string.cancel)) } })
     val titles = listOf(R.string.choose_trigger, R.string.choose_schedule, R.string.choose_action, R.string.review_rule)
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.rule_editor)) }, navigationIcon = { TextButton(onClick = onClose) { Text(stringResource(R.string.cancel)) } }) }, bottomBar = {
@@ -147,7 +147,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                         Text(if (resolved is Resolution.Match) stringResource(resolved.rule.action.kind.label()) else stringResource(R.string.pass_through))
                     }
                     Notice(stringResource(R.string.preview_logical))
-                    OutlinedButton(enabled = actionCapability?.status == Support.SUPPORTED, onClick = { confirmTest = true }) { Text(stringResource(R.string.test_action)) }
+                    OutlinedButton(enabled = actionCapability?.status == Support.SUPPORTED || (config.tier == Tier.ROOT && kind in setOf(ActionKind.ACTIVITY, ActionKind.STOCK_CAMERA_CAPTURE)), onClick = { confirmTest = true }) { Text(stringResource(R.string.test_action)) }
                     actionMessage?.let { Text(stringResource(it)) }
                 }
             }

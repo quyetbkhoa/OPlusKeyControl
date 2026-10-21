@@ -2,13 +2,16 @@
 
 ## This build
 
-No physical-device install or activation has been authorized yet. The debug APK
-includes a self-scoped API 101 diagnostic entry with no hook registration. Do not
-add system/framework packages to scope. Framework compatibility still needs an
-approved self-scope probe test; `compileOnly` API is excluded from the APK.
+Normal APKs include a self-scoped API 101 diagnostic entry with no system hooks;
+API 101 code and physical Plus observation were tested under runtime Vector API
+102. The separately built runtime candidate is NOT device-accepted and must not
+be enabled as part of ordinary UI installation. See RUNTIME_BACKEND.md for the
+exact proposed first experiment and its additional root-child/keeper lifecycle.
 
 The UI/action utility works without Vector. Root checking is an explicit `su -c id`
-probe only; selecting Shizuku never invokes su. Accessibility is optional and
+probe in normal mode; Root action tests invoke su only after explicit selection
+and confirmation. The runtime build may run a transient scope-watcher child when
+Root is selected and enabled. Selecting Shizuku never invokes su. Accessibility is optional and
 observation-only. No key events are consumed, no node content is read.
 
 ## Stop
@@ -25,7 +28,26 @@ remains BLOCKED until approval. Public audio is intentionally retained after
 uninstall, unlike private rules. Interrupted MediaRecorder output may be invalid;
 pending-file recovery has not yet been verified.
 
-## Future policy experiments (not shipped)
+## Experimental runtime rollback
+
+Use only this module's CLI operations, never a framework-wide disable/reset:
+
+```text
+/data/adb/lspd/cli modules disable dev.opluskeycontrol --json
+/data/adb/lspd/cli scope rm dev.opluskeycontrol system/0 dev.opluskeycontrol/0 --json
+```
+
+Then restore the audited normal APK with Android's update install (`install -r`),
+preserving rules. The runtime listens for its package update/removal and attempts
+to revoke authority, unhook and release its worker/binding. This teardown is an
+implemented design, not a tested uninstall guarantee. The stdin lifetime pipe is
+intended to exit the transient root watcher when its app dies. Check the actual
+process list/helper lifetime during the approved device experiment. Do not declare
+clean uninstall from a successful build. Existing audio/photos are retained.
+No additional reboot is included in this rollback. If teardown fails, resident
+input code must still pass new presses through when its socket is gone.
+
+## Policy experiment approval
 
 Before any system_server hook activation, require explicit approval, verify a
 firmware-specific signature, prove narrow scope and balanced key handling, have

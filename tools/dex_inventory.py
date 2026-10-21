@@ -28,6 +28,40 @@ class Dex:
     def u4(self, off): return struct.unpack_from("<I", self.data, off)[0]
     def u2(self, off): return struct.unpack_from("<H", self.data, off)[0]
 
+    def uleb(self, off):
+        value, shift = 0, 0
+        while True:
+            byte = self.data[off]; off += 1
+            value |= (byte & 127) << shift
+            if byte < 128: return value, off
+            shift += 7
+            assert shift <= 35
+
+    def method_code(self, descriptor, method):
+        """Defined method instructions for packaging audits, not OEM redistribution."""
+        count, offset = self.u4(96), self.u4(100)
+        for i in range(count):
+            item = offset + i * 32
+            if self.types[self.u4(item)] != descriptor: continue
+            cursor = self.u4(item + 24)
+            if not cursor: return None
+            sizes = []
+            for _ in range(4):
+                size, cursor = self.uleb(cursor); sizes.append(size)
+            for _ in range(sizes[0] + sizes[1]):
+                _, cursor = self.uleb(cursor); _, cursor = self.uleb(cursor)
+            for size in sizes[2:]:
+                index = 0
+                for _ in range(size):
+                    delta, cursor = self.uleb(cursor); index += delta
+                    _, cursor = self.uleb(cursor); code, cursor = self.uleb(cursor)
+                    method_id = self.u4(92) + index * 8
+                    if self.strings[self.u4(method_id + 4)] == method:
+                        if not code: return None
+                        units = self.u4(code + 12)
+                        return self.data[code + 16:code + 16 + units * 2]
+        return None
+
     def string(self, off):
         while self.data[off] & 128: off += 1
         off += 1

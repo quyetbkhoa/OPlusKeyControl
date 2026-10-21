@@ -19,18 +19,21 @@ import kotlinx.coroutines.sync.withLock
 
 class ActionExecutor(private val context: Context) {
     val message = MutableStateFlow<Int?>(null)
+    val torchReady = MutableStateFlow(false)
+    val busy = MutableStateFlow(false)
     private val mutex = Mutex()
     private val cameras = context.getSystemService(CameraManager::class.java)
     private val torch = mutableMapOf<String, Boolean>()
     private val available = mutableMapOf<String, Boolean>()
     init {
         cameras.registerTorchCallback(object : CameraManager.TorchCallback() {
-            override fun onTorchModeChanged(id: String, enabled: Boolean) { torch[id] = enabled; available[id] = true }
-            override fun onTorchModeUnavailable(id: String) { available[id] = false }
+            override fun onTorchModeChanged(id: String, enabled: Boolean) { torch[id] = enabled; available[id] = true; torchReady.value = available.values.any { it } }
+            override fun onTorchModeUnavailable(id: String) { available[id] = false; torchReady.value = available.values.any { it } }
         }, Handler(Looper.getMainLooper()))
     }
-    suspend fun execute(action: Action, visibleActivity: Boolean = false) {
+    suspend fun execute(action: Action, visibleActivity: Boolean = false, rootAuthorized: Boolean = false) {
         if (!mutex.tryLock()) { message.value = R.string.action_busy; return }
+        busy.value = true
         try {
             when (action.kind) {
                 ActionKind.TORCH_TOGGLE, ActionKind.TORCH_ON, ActionKind.TORCH_OFF -> {
@@ -45,10 +48,32 @@ class ActionExecutor(private val context: Context) {
                     if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { message.value = R.string.unlock_required; return }
                     val intent = context.packageManager.getLaunchIntentForPackage(requireNotNull(action.packageName))
                     if (intent == null) { message.value = R.string.app_unavailable; return }
-                    context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); message.value = R.string.launch_requested
+                    if (rootAuthorized) {
+                        message.value = if (intent.component?.let { RootActivityLauncher.launch(context, it) } == true) R.string.launch_requested else R.string.action_failed
+                    } else { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); message.value = R.string.launch_requested }
                 }
-                ActionKind.ACTIVITY -> { message.value = R.string.activity_unverified }
-                ActionKind.STOCK_CAMERA_CAPTURE -> { message.value = R.string.camera_unverified }
+                ActionKind.ACTIVITY -> {
+                    val component = ComponentName(requireNotNull(action.packageName), requireNotNull(action.activity))
+                    if (rootAuthorized) {
+                        val success = RootActivityLauncher.launch(context, component)
+                        message.value = if (success) R.string.launch_requested else R.string.action_failed
+                        if (success && visibleActivity) ActionProofs.record(context, action)
+                    }
+                    else {
+                        @Suppress("DEPRECATION")
+                        val info = context.packageManager.getActivityInfo(component, 0)
+                        if (!visibleActivity || !info.enabled || !info.applicationInfo.enabled || !info.exported || !info.permission.isNullOrBlank() ||
+                            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { message.value = R.string.activity_unverified; return }
+                        context.startActivity(Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        message.value = R.string.launch_requested
+                    }
+                }
+                ActionKind.STOCK_CAMERA_CAPTURE -> {
+                    if (!rootAuthorized || (!visibleActivity && !ActionProofs.verified(context, action))) { message.value = R.string.camera_unverified; return }
+                    val success = StockCameraCapture(context).capture()
+                    message.value = if (success) R.string.photo_confirmed else R.string.action_failed
+                    if (success && visibleActivity) ActionProofs.record(context, action)
+                }
                 ActionKind.RECORD_TOGGLE -> {
                     if (RecorderService.recording.value) context.startService(Intent(context, RecorderService::class.java).setAction(RecorderService.STOP))
                     else if (visibleActivity && Capabilities.permission(context, android.Manifest.permission.RECORD_AUDIO))
@@ -57,7 +82,7 @@ class ActionExecutor(private val context: Context) {
                 }
             }
         } catch (_: Exception) { message.value = R.string.action_failed }
-        finally { mutex.unlock() }
+        finally { mutex.unlock(); busy.value = false }
     }
     /** Separate, honestly labelled preview: no shutter is fired or claimed. */
     fun openStockCamera(): Boolean = runCatching {

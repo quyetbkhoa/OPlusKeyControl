@@ -1,8 +1,11 @@
 # Architecture and invariants
 
-A separate finite policy observation APK and replacement decision gate have
-since been added; see POLICY_PROBE.md. The normal build's system-server callback
-compiles to a return. No runtime action bridge/replacement is activated.
+A separate finite observation APK proved Plus reaches IMS; see POLICY_PROBE.md.
+An opt-in runtime implementation now connects policy ownership, authenticated
+transport, rules and actions; see RUNTIME_BACKEND.md for complete-coverage limits,
+lifecycle design and device-test gaps. Normal build callbacks compile to no-op.
+No runtime remapping build has been activated. The original design notes below
+predate that candidate and describe the normal observer-only build.
 
 `InputSource -> ownership -> ButtonEvent(monotonic) -> GestureEngine -> RuleResolver(zoned clock) -> ActionExecutor`
 

@@ -4,6 +4,18 @@ Android 16 / OnePlus 15 time-aware button utility. **0.1.0-dev does not remap
 physical buttons yet.** See [acceptance status](docs/ACCEPTANCE.md),
 [device evidence](docs/DEVICE_DISCOVERY.md) and [recovery](docs/RECOVERY.md).
 
+The approved observation probe captured physical Plus keyCode 780 / scanCode 735.
+A separate [experimental runtime candidate](docs/RUNTIME_BACKEND.md) now connects
+the hook, authenticated app transport, gesture/rule engine and action dispatch.
+It has been installed for a UI check, but is not device-accepted. Raw Plus ownership requires active
+single/double/long coverage together; partial mappings pass all input through.
+Normal builds remain self-scoped with zero system hooks. Build the candidate with
+`-PopcRuntime=true` and audit/copy with `python tools/package_debug.py --runtime`.
+
+The summary below describes the normal build and previous manual device tests.
+Runtime camera, background recording, internal Activity targets, scope revocation
+and helper cleanup still require explicit device acceptance.
+
 Implemented: pure Kotlin gesture/rule engine, schedules with overnight weekdays,
 priority/conflict detection, Compose Material 3 wizard, Vietnamese/English,
 versioned DataStore and validated backup/restore, app/activity discovery,

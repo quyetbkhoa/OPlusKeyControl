@@ -8,6 +8,10 @@ import androidx.core.content.ContextCompat
 import dev.opluskeycontrol.domain.*
 import dev.opluskeycontrol.R
 import rikka.shizuku.Shizuku
+import dev.opluskeycontrol.BuildConfig
+import dev.opluskeycontrol.KeyControlApp
+import dev.opluskeycontrol.actions.ActionProofs
+import dev.opluskeycontrol.input.PolicyBridge
 
 enum class Support { SUPPORTED, PERMISSION, VERIFY, UNSUPPORTED }
 data class Capability(val status: Support, val reason: Int)
@@ -24,7 +28,10 @@ object Capabilities {
     fun permission(context: Context, name: String) = ContextCompat.checkSelfPermission(context, name) == PackageManager.PERMISSION_GRANTED
     fun trigger(context: Context, tier: Tier, trigger: Trigger): Capability {
         if (tier == Tier.SHIZUKU) return Capability(Support.VERIFY, R.string.shizuku_limitation)
-        if (tier == Tier.ROOT) return Capability(Support.VERIFY, R.string.root_limitation)
+        if (tier == Tier.ROOT) return when {
+            trigger.button == Button.PLUS && trigger.gesture != Gesture.CHORD && BuildConfig.POLICY_RUNTIME && PolicyBridge.connected.value -> Capability(Support.SUPPORTED, R.string.root_full_coverage)
+            else -> Capability(Support.VERIFY, R.string.root_limitation)
+        }
         if (trigger.button !in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN) || trigger.gesture != Gesture.SINGLE)
             return Capability(Support.UNSUPPORTED, R.string.basic_limitation)
         // Public key filtering cannot defer single while guaranteeing OEM long
@@ -32,10 +39,12 @@ object Capabilities {
         return Capability(Support.VERIFY, R.string.basic_limitation)
     }
     fun action(context: Context, action: Action): Capability = when {
-        action.kind == ActionKind.STOCK_CAMERA_CAPTURE -> Capability(Support.VERIFY, R.string.camera_unverified)
-        action.kind == ActionKind.ACTIVITY -> Capability(Support.VERIFY, R.string.activity_unverified)
+        action.kind in setOf(ActionKind.STOCK_CAMERA_CAPTURE, ActionKind.ACTIVITY) -> if (ActionProofs.verified(context, action))
+            Capability(Support.SUPPORTED, R.string.action_available) else Capability(Support.VERIFY, if (action.kind == ActionKind.ACTIVITY) R.string.activity_unverified else R.string.camera_unverified)
         action.kind in setOf(ActionKind.TORCH_ON, ActionKind.TORCH_OFF, ActionKind.TORCH_TOGGLE) && !permission(context, Manifest.permission.CAMERA) -> Capability(Support.PERMISSION, R.string.camera_permission)
-        action.kind == ActionKind.RECORD_TOGGLE -> Capability(Support.PERMISSION, R.string.recorder_visible)
+        action.kind == ActionKind.RECORD_TOGGLE -> if (BuildConfig.POLICY_RUNTIME && (context.applicationContext as? KeyControlApp)?.store?.config?.value?.tier == Tier.ROOT &&
+            permission(context, Manifest.permission.RECORD_AUDIO) && permission(context, Manifest.permission.POST_NOTIFICATIONS))
+            Capability(Support.SUPPORTED, R.string.recorder_root_experimental) else Capability(Support.PERMISSION, R.string.recorder_visible)
         else -> Capability(Support.SUPPORTED, R.string.action_available)
     }
 }

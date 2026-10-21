@@ -8,6 +8,15 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: normal
+            flags: ''
+            audit: ''
+          - variant: runtime
+            flags: '-PopcRuntime=true'
+            audit: '--runtime'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -18,15 +27,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - run: chmod +x gradlew
-      - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+      - run: ./gradlew ${{ matrix.flags }} :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+      - run: python tools/package_debug.py ${{ matrix.audit }}
       - uses: actions/upload-artifact@v4
         with:
-          name: OPlusKeyControl-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: OPlusKeyControl-${{ matrix.variant }}-debug
+          path: artifacts/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: verification-reports
+          name: verification-reports-${{ matrix.variant }}
           path: |
             domain/build/reports/tests/
             app/build/reports/tests/

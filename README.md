@@ -3,8 +3,10 @@
 Ứng dụng Android Kotlin/Compose tùy biến nút theo lịch, đang phát triển cho
 OnePlus 15 / Android 16. **Bản 0.1.0-dev chưa remap nút thật.**
 Không phải bản nghiệm thu đầy đủ theo [yêu cầu](docs/IMPLEMENTATION_BRIEF.vi.md).
-Đã có [APK probe policy riêng](docs/POLICY_PROBE.md) để xác minh luồng Plus;
-chưa kích hoạt, không được hiểu là backend remap đã hoạt động.
+Đã [bắt được Plus thật](docs/POLICY_PROBE.md): keyCode 780 / scanCode 735.
+Có [backend runtime thử nghiệm riêng](docs/RUNTIME_BACKEND.md) đã nối app/hook,
+gesture, lịch và actions; **đã cài runtime để kiểm tra UI, chưa nghiệm thu remap**.
+Không bật tự động. Xem [hướng dẫn tự test](docs/MANUAL_TEST.vi.md).
 [English](README.en.md) · [Khảo sát thiết bị](docs/DEVICE_DISCOVERY.md) ·
 [Ma trận nghiệm thu](docs/ACCEPTANCE.md) · [Recovery](docs/RECOVERY.md).
 
@@ -13,7 +15,7 @@ chưa kích hoạt, không được hiểu là backend remap đã hoạt động
 - Compose Material 3, sáng/tối/dynamic color, tiếng Việt mặc định và tiếng Anh.
 - Wizard nút/gesture/lịch/action; không nhập package/class/intent/shell.
 - Lõi Kotlin độc lập: single/double/long, tổ hợp giữ nút và gần đồng thời,
-  debounce, repeat/cancel, ownership; **chưa nối vào policy của điện thoại**.
+  debounce, repeat/cancel, ownership; đã nối vào candidate Plus runtime riêng.
 - Rule nhiều khung giờ, thứ trong tuần, qua nửa đêm, `[start,end)`, ưu tiên,
   default, báo xung đột; clock/múi giờ hiện tại khi resolver được gọi.
 - DataStore JSON schema v1, kiểm tra dữ liệu nhập, khôi phục mặc định tắt.
@@ -24,15 +26,22 @@ chưa kích hoạt, không được hiểu là backend remap đã hoạt động
 - Accessibility chỉ quan sát Volume, luôn `return false`; không đọc màn hình.
 - Phát hiện binder/quyền Shizuku thật; `su -c id` chỉ khi chủ động chọn Root.
 - Modern libxposed API **101.0.1** `compileOnly`, entry **probe không hook**,
-  scope chỉ `dev.opluskeycontrol`. Binary Vector hiện cài báo API 102 qua
-  phân tích bytecode; chưa kích hoạt probe để xác nhận runtime.
+  scope chỉ `dev.opluskeycontrol` trong bản thường. Probe thật đã chạy dưới Vector
+  API 102. Bản `-PopcRuntime=true` dùng system/self scope và cần duyệt thử riêng.
+
+Candidate runtime có local socket xác thực UID, snapshot cấu hình, thu hồi scope
+bằng FileObserver trong root child có lifetime pipe, queue giới hạn và one-shot
+gesture deadlines. Chỉ nhận Plus khi đủ rule nhấn đơn/đúp/giữ và actions sẵn sàng;
+thiếu một gesture thì toàn bộ Plus cho ColorOS xử lý. Activity root và camera tự
+chụp có bước thử thủ công trước khi đánh dấu sẵn sàng. Đường yêu cầu ghi âm từ
+system_server đã có nhưng chưa chứng minh chạy nền được trên ROM.
 
 ## Chưa hỗ trợ trong bản này
 
-Plus/Power/Volume replacement trên máy thật; capture qua Shizuku; native/root
-input listener; hook OEM; screen-off/deep-sleep remap; tự chụp camera stock;
-launch activity đặc quyền; bắt đầu ghi âm từ màn hình khóa; multi-profile.
-Các rule liên quan chỉ lưu dạng tắt. Không tự thay bằng camera riêng, inject
+Chưa nghiệm thu Plus replacement trên máy thật; gán riêng từng gesture Plus,
+Power/Volume replacement, capture qua Shizuku, chord, screen-off/deep-sleep,
+camera shutter, activity nội bộ, ghi âm nền/khóa và multi-profile.
+Bản thường vẫn chỉ lưu các mapping chưa hỗ trợ dưới dạng tắt. Không tự thay bằng camera riêng, inject
 Volume làm shutter, giả UID/chữ ký, hoặc chiếm cả input device.
 
 Power single/long và mọi chord chứa Power bị chặn ở domain/UI. Hai nút Volume
@@ -48,6 +57,10 @@ Kotlin 2.4.10. Tối thiểu Android 9/API 28; mục tiêu kiểm chứng Androi
 ```powershell
 # Đặt SDK bằng ANDROID_HOME hoặc local.properties (file này không commit).
 .\gradlew.bat :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+python tools/package_debug.py
+# Candidate riêng, không tự cài/bật module:
+.\gradlew.bat -PopcRuntime=true :app:assembleDebug
+python tools/package_debug.py --runtime
 ```
 
 APK debug: `app/build/outputs/apk/debug/app-debug.apk`. Khóa debug do Android

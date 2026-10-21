@@ -3,6 +3,18 @@
 **Development checkpoint, not complete product acceptance.** A successful build,
 JVM test or bytecode inspection is not physical-device input/action evidence.
 
+Current follow-up: [POLICY_PROBE.md](POLICY_PROBE.md) confirms physical Plus
+780/735 DOWN/UP reaches IMS. [RUNTIME_BACKEND.md](RUNTIME_BACKEND.md) describes the
+implemented experimental bridge/ownership/actions and the next concrete device
+experiment. All replacement, scope revocation, helper cleanup, camera shutter,
+background recorder and screen-state acceptance cells remain NOT_TESTED. Partial
+Plus mapping and Volume/Power/chord replacement are still unavailable; a runtime
+candidate is not acceptance of the full supplied brief.
+
+Local implementation check: 100 JVM tests pass, lint reports 0 errors / 22
+warnings, normal/runtime builds and three-mode DEX/signature audits pass. These
+are implementation checks, not additional PASS rows for physical remapping.
+
 Update: [DEVICE_ACTION_TESTS.md](DEVICE_ACTION_TESTS.md) supersedes the initial
 NOT_TESTED entries for manual unlocked torch, visible recorder toggle/autostop,
 stock camera open-only, self-launch, picker/wizard and persistence. Actual

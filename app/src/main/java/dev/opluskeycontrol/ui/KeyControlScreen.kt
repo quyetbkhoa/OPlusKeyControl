@@ -43,6 +43,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     val storeError by app.store.error.collectAsStateWithLifecycle()
     val emergency by app.store.emergency.collectAsStateWithLifecycle()
     val connected by BasicInputService.connected.collectAsStateWithLifecycle()
+    val rootConnected by dev.opluskeycontrol.input.PolicyBridge.connected.collectAsStateWithLifecycle()
     val events by BasicInputService.events.collectAsStateWithLifecycle()
     val message by app.actions.message.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -95,6 +96,10 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                         }
                         Text(stringResource(config.tier.label()), style = MaterialTheme.typography.labelLarge)
                         Text(stringResource(if (connected) R.string.accessibility_connected else R.string.accessibility_disconnected))
+                        if (config.tier == Tier.ROOT) {
+                            Text(stringResource(if (rootConnected) R.string.root_connected else R.string.root_disconnected))
+                            Text(stringResource(R.string.root_full_coverage))
+                        }
                     } }
                     item { InfoCard(R.string.capabilities, R.string.no_verified_oem_backend) {
                         for (button in Button.entries) {

@@ -53,7 +53,7 @@
     <string name="backend_explanation">Đổi chế độ sẽ tắt remap. Không tự chuyển từ Shizuku sang root.</string>
     <string name="basic_limitation">Cơ bản chỉ quan sát phím Volume. Chưa bật thay thế vì cần giữ nguyên long/double không được gán.</string>
     <string name="shizuku_limitation">Có phát hiện binder/quyền Shizuku thật. Chưa có adapter bắt và thay thế nút đã xác minh.</string>
-    <string name="root_limitation">Chưa xác minh API 101 và điểm hook firmware. Không nạp hook hay daemon trong bản này.</string>
+    <string name="root_limitation">Bản thường không gắn hook. Backend Plus thử nghiệm cần đúng firmware, scope system trong Vector và phiên Root có xác thực; chưa hỗ trợ Power/Volume/chord.</string>
     <string name="shizuku_granted">Shizuku: đã cấp quyền</string>
     <string name="shizuku_running">Shizuku: đang chạy, chưa cấp quyền</string>
     <string name="shizuku_missing">Shizuku: chưa kết nối</string>
@@ -138,11 +138,16 @@
     <string name="select">Chọn</string>
     <string name="launcher_activity">Màn hình mở ứng dụng · có launcher</string>
     <string name="exported_unverified">Exported · cần xác minh extras / trạng thái</string>
-    <string name="internal_activity">Không hỗ trợ: activity nội bộ</string>
+    <string name="internal_activity">Activity nội bộ · chỉ Root chọn và thử rõ ràng</string>
     <string name="protected_activity">Không hỗ trợ: activity có quyền bảo vệ</string>
     <string name="disabled_activity">Không hỗ trợ: đã tắt</string>
     <string name="exported_value">Exported: %1$s</string>
     <string name="current_profile_only">Chỉ hồ sơ hiện tại; không giả định quyền giữa các user/profile.</string>
     <string name="test_action">Thử hành động ngay</string>
     <string name="test_action_confirmation">Thực hiện ngay: %1$s. Thao tác này sẽ tác động thiết bị hoặc mở app đã chọn.</string>
+    <string name="root_connected">Backend Plus đã kết nối · bản thử nghiệm chưa nghiệm thu trên máy</string>
+    <string name="root_disconnected">Backend Plus chưa kết nối · ColorOS tiếp tục xử lý phím</string>
+    <string name="root_full_coverage">Bản thử phím thô chỉ remap Plus khi nhấn đơn, nhấn đúp và giữ đều có rule đang áp dụng và hành động sẵn sàng. Thiếu một gesture hoặc có chord Plus đang bật: toàn bộ Plus trả về ColorOS. Power/Volume giữ nguyên.</string>
+    <string name="recorder_root_experimental">Thử nghiệm: system_server yêu cầu dịch vụ microphone; giữ thông báo và chỉ báo quyền riêng tư. Chưa nghiệm thu ghi âm nền trên ROM này.</string>
+    <string name="photo_confirmed">Đã nhận xác nhận ảnh mới từ MediaStore; camera được giữ mở.</string>
 </resources>

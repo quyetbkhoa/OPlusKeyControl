@@ -17,8 +17,10 @@ import java.time.format.DateTimeFormatter
 class RecorderService : Service() {
     companion object {
         const val STOP = "dev.opluskeycontrol.STOP_RECORDING"
+        const val TOGGLE = "dev.opluskeycontrol.TOGGLE_RECORDING"
         val recording = MutableStateFlow(false)
         val error = MutableStateFlow(false)
+        val origin = MutableStateFlow<dev.opluskeycontrol.domain.Trigger?>(null)
     }
     private var recorder: MediaRecorder? = null
     private var uri: Uri? = null
@@ -28,6 +30,17 @@ class RecorderService : Service() {
     override fun onBind(intent: Intent?) = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) { finishRecording(); return START_NOT_STICKY }
+        if (intent?.action == TOGGLE && recorder != null) { finishRecording(); return START_NOT_STICKY }
+        if (intent?.hasExtra("originGesture") == true) {
+            val app = application as dev.opluskeycontrol.KeyControlApp
+            val c = app.store.config.value
+            val trigger = runCatching { dev.opluskeycontrol.domain.Trigger(dev.opluskeycontrol.domain.Button.PLUS,
+                dev.opluskeycontrol.domain.Gesture.valueOf(requireNotNull(intent.getStringExtra("originGesture")))) }.getOrNull()
+            val rule = trigger?.let { dev.opluskeycontrol.domain.RuleResolver.resolve(c.rules, it, java.time.ZonedDateTime.now()) }
+            if (!c.enabled || c.tier != dev.opluskeycontrol.domain.Tier.ROOT || app.store.emergency.value ||
+                rule !is dev.opluskeycontrol.domain.Resolution.Match || rule.rule.action.kind != dev.opluskeycontrol.domain.ActionKind.RECORD_TOGGLE ||
+                rule.rule.id != intent.getStringExtra("originRule")) { stopSelf(); return START_NOT_STICKY }
+        }
         if (recorder != null) return START_NOT_STICKY
         error.value = false
         try {
@@ -59,6 +72,9 @@ class RecorderService : Service() {
             r.setOutputFile(descriptor!!.fileDescriptor)
             r.setOnErrorListener { _, _, _ -> error.value = true; finishRecording() }
             r.prepare(); r.start(); recording.value = true
+            origin.value = intent?.getStringExtra("originGesture")?.let { name -> runCatching {
+                dev.opluskeycontrol.domain.Trigger(dev.opluskeycontrol.domain.Button.PLUS, dev.opluskeycontrol.domain.Gesture.valueOf(name))
+            }.getOrNull() }
             handler.postDelayed(autoStop, intent?.getIntExtra("seconds", 300)?.coerceIn(10, 7200)?.times(1000L) ?: 300000L)
         } catch (_: Exception) { error.value = true; discard(); stopSelf() }
         return START_NOT_STICKY
@@ -67,7 +83,7 @@ class RecorderService : Service() {
         runCatching { recorder?.reset(); recorder?.release() }; recorder = null
         runCatching { descriptor?.close() }; descriptor = null
         uri?.let { runCatching { contentResolver.delete(it, null, null) } }; uri = null
-        recording.value = false; handler.removeCallbacks(autoStop)
+        recording.value = false; origin.value = null; handler.removeCallbacks(autoStop)
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
     private fun finishRecording() {
@@ -80,7 +96,7 @@ class RecorderService : Service() {
             else contentResolver.delete(target, null, null)
         }.onFailure { error.value = true } }
         if (!stopped) error.value = true
-        uri = null; recording.value = false; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+        uri = null; recording.value = false; origin.value = null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }
     override fun onDestroy() { if (recorder != null) finishRecording(); super.onDestroy() }
 }

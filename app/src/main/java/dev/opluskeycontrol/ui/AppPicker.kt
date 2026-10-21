@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, String?) -> Unit) {
     val context = LocalContext.current
+    val backendConfig by (context.applicationContext as dev.opluskeycontrol.KeyControlApp).store.config.collectAsState()
     val catalog = remember { AppCatalog(context) }
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
     var activities by remember { mutableStateOf<List<ActivityEntry>?>(null) }
@@ -69,10 +70,14 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
                             Text(activity.label, style = MaterialTheme.typography.titleMedium)
                             Text(stringResource(activity.status.label()))
                             // Technical details intentionally read-only. No arbitrary intent/shell input.
-                            Text(activity.name, style = MaterialTheme.typography.bodySmall)
-                            Text(stringResource(R.string.exported_value, activity.exported.toString()))
-                            Text(stringResource(R.string.current_profile_only), style = MaterialTheme.typography.bodySmall)
-                            Button(enabled = activity.status == Launchability.LAUNCHER, onClick = { onSelect(selected!!, activity.name) }) { Text(stringResource(R.string.select)) }
+                            if (advanced) {
+                                Text(activity.name, style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.exported_value, activity.exported.toString()))
+                                Text(stringResource(R.string.current_profile_only), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Button(enabled = activity.status in setOf(Launchability.LAUNCHER, Launchability.EXPORTED_UNVERIFIED) ||
+                                (activity.status == Launchability.INTERNAL && backendConfig.tier == dev.opluskeycontrol.domain.Tier.ROOT),
+                                onClick = { onSelect(selected!!, activity.name) }) { Text(stringResource(R.string.select)) }
                         } }
                     }
                 }

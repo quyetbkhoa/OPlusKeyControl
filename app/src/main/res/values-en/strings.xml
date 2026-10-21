@@ -53,7 +53,7 @@
     <string name="backend_explanation">Changing mode disables remapping. Shizuku never silently falls back to root.</string>
     <string name="basic_limitation">Basic observes Volume keys only. Replacement is gated to preserve unassigned long/double gestures.</string>
     <string name="shizuku_limitation">Real Shizuku binder/permission detection. No verified button capture/replacement adapter yet.</string>
-    <string name="root_limitation">API 101 and firmware hook points are unverified. This build loads no hooks or daemons.</string>
+    <string name="root_limitation">Normal builds attach no hook. Experimental Plus needs the exact firmware, Vector system scope and an authenticated Root session; Power/Volume/chords are unavailable.</string>
     <string name="shizuku_granted">Shizuku: permission granted</string>
     <string name="shizuku_running">Shizuku: running, permission required</string>
     <string name="shizuku_missing">Shizuku: disconnected</string>
@@ -138,11 +138,16 @@
     <string name="select">Select</string>
     <string name="launcher_activity">Launcher activity</string>
     <string name="exported_unverified">Exported · extras/state unverified</string>
-    <string name="internal_activity">Unsupported: internal activity</string>
+    <string name="internal_activity">Internal Activity · explicit Root selection and test only</string>
     <string name="protected_activity">Unsupported: permission-protected activity</string>
     <string name="disabled_activity">Unsupported: disabled activity</string>
     <string name="exported_value">Exported: %1$s</string>
     <string name="current_profile_only">Current profile only; cross-user/profile access is not assumed.</string>
     <string name="test_action">Test action now</string>
     <string name="test_action_confirmation">Run now: %1$s. This affects the device or opens the selected app.</string>
+    <string name="root_connected">Plus backend connected · experimental, device acceptance pending</string>
+    <string name="root_disconnected">Plus backend disconnected · ColorOS handles input</string>
+    <string name="root_full_coverage">The raw-input experiment remaps Plus only when single, double and long each have a matching active rule and ready action. Missing any gesture, or an enabled Plus chord, passes all Plus input to ColorOS. Power/Volume are unchanged.</string>
+    <string name="recorder_root_experimental">Experimental: system_server requests the microphone service, preserving notification and privacy indicators. Background recording on this ROM is not verified.</string>
+    <string name="photo_confirmed">A new photo was acknowledged by MediaStore; camera remains open.</string>
 </resources>
