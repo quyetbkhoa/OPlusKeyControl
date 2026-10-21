@@ -11,6 +11,18 @@ verified immediately before installation. See MANUAL_TEST.vi.md for handoff.
 
 ## What is implemented
 
+2026-10-22 follow-up: rule preparation now permits offline Plus single/double/long
+in the opt-in Root build, while runtime consumption still requires a live peer,
+valid authority and full coverage. UI shows disconnected/action prerequisites.
+Early context initialization registers readiness receivers before querying
+ActivityManager. A bounded app-ready retry window avoids dropping readiness
+while another connection is unwinding; finite boot initialization lasts at most
+90 seconds. Warning-level bounded diagnostics identify entry/profile/context/
+connection failure. The updated APK is installed and its device hash matched
+`2645a14e7c913d438f8b2fdc9213c892a08e5149438bc0104ef4b9aa9625d1b5`.
+Rule switches were enabled in the real UI; no rule/action was activated by the
+agent. New system-server code awaits a manual reboot and remains unverified.
+
 - Exact API 36 / CPH2745 / CPH2745_16.0.10.601(EX01) guard and exact IMS signature.
   Only keyCode 780, scanCode 735, input device gpio-keys may be owned. Foreground
   user must be user 0. User switches revoke the connection. Other keys always

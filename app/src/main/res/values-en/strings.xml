@@ -146,7 +146,7 @@
     <string name="test_action">Test action now</string>
     <string name="test_action_confirmation">Run now: %1$s. This affects the device or opens the selected app.</string>
     <string name="root_connected">Plus backend connected · experimental, device acceptance pending</string>
-    <string name="root_disconnected">Plus backend disconnected · ColorOS handles input</string>
+    <string name="root_disconnected">Plus backend disconnected. Rules can be enabled for preparation, but remapping is inactive; ColorOS handles input. After updating the APK, reboot to load the new backend.</string>
     <string name="root_full_coverage">The raw-input experiment remaps Plus only when single, double and long each have a matching active rule and ready action. Missing any gesture, or an enabled Plus chord, passes all Plus input to ColorOS. Power/Volume are unchanged.</string>
     <string name="recorder_root_experimental">Experimental: system_server requests the microphone service, preserving notification and privacy indicators. Background recording on this ROM is not verified.</string>
     <string name="photo_confirmed">A new photo was acknowledged by MediaStore; camera remains open.</string>

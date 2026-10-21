@@ -16,6 +16,10 @@ import dev.opluskeycontrol.input.PolicyBridge
 enum class Support { SUPPORTED, PERMISSION, VERIFY, UNSUPPORTED }
 data class Capability(val status: Support, val reason: Int)
 object Capabilities {
+    // Rule preparation does not grant runtime authority to consume input.
+    fun configurableTrigger(tier: Tier, trigger: Trigger): Boolean =
+        BuildConfig.POLICY_RUNTIME && tier == Tier.ROOT && trigger.button == Button.PLUS &&
+            trigger.gesture in setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG)
     fun accessibility(context: Context): Boolean {
         val services = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         return services.split(':').any { android.content.ComponentName.unflattenFromString(it)?.let { c ->
@@ -30,6 +34,7 @@ object Capabilities {
         if (tier == Tier.SHIZUKU) return Capability(Support.VERIFY, R.string.shizuku_limitation)
         if (tier == Tier.ROOT) return when {
             trigger.button == Button.PLUS && trigger.gesture != Gesture.CHORD && BuildConfig.POLICY_RUNTIME && PolicyBridge.connected.value -> Capability(Support.SUPPORTED, R.string.root_full_coverage)
+            configurableTrigger(tier, trigger) -> Capability(Support.VERIFY, R.string.root_disconnected)
             else -> Capability(Support.VERIFY, R.string.root_limitation)
         }
         if (trigger.button !in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN) || trigger.gesture != Gesture.SINGLE)

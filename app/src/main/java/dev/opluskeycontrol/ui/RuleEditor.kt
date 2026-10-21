@@ -29,6 +29,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
     val app = context.applicationContext as KeyControlApp
     val scope = rememberCoroutineScope()
     val actionMessage by app.actions.message.collectAsState()
+    val backendConnected by dev.opluskeycontrol.input.PolicyBridge.connected.collectAsState()
     var confirmTest by remember { mutableStateOf(false) }
     var step by remember { mutableIntStateOf(0) }
     var button by remember { mutableStateOf(original?.trigger?.button ?: Button.PLUS) }
@@ -56,9 +57,9 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
     val action = runCatching { Action(kind, if (kind in setOf(ActionKind.APP, ActionKind.ACTIVITY)) target?.packageName else null, if (kind == ActionKind.ACTIVITY) activity else null, duration.toInt()) }.getOrNull()
     val rule = if (trigger != null && action != null && (!scheduled || schedule != null)) Rule(id, trigger, action, schedule, priority.toInt(), enabled) else null
     val conflict = rule != null && RuleResolver.conflicts(rule, config.rules)
-    val triggerCapability = trigger?.let { Capabilities.trigger(context, config.tier, it) }
+    val triggerCapability = remember(trigger, config.tier, backendConnected) { trigger?.let { Capabilities.trigger(context, config.tier, it) } }
     val actionCapability = action?.let { Capabilities.action(context, it) }
-    val canEnable = triggerCapability?.status == Support.SUPPORTED && actionCapability?.status == Support.SUPPORTED
+    val canEnable = (triggerCapability?.status == Support.SUPPORTED || trigger?.let { Capabilities.configurableTrigger(config.tier, it) } == true) && actionCapability?.status == Support.SUPPORTED
     if (confirmTest && action != null) AlertDialog(onDismissRequest = { confirmTest = false },
         title = { Text(stringResource(R.string.test_action)) },
         text = { Text(stringResource(R.string.test_action_confirmation, stringResource(action.kind.label()))) },

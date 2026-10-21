@@ -1,5 +1,26 @@
 # Tự kiểm tra OPlusKeyControl — 2026-10-22
 
+## Cập nhật sửa công tắc rule
+
+Đã cài bản sửa, SHA-256 `2645a14e7c913d438f8b2fdc9213c892a08e5149438bc0104ef4b9aa9625d1b5`.
+UI trên máy xác nhận công tắc rule Plus một lần/giữ lâu đã enabled dù backend
+offline. Chưa thử chuyển ON vì công tắc chính đã được người dùng bật; không
+tự kích hoạt rule ghi âm/đèn pin. Không thay đổi các rule của người dùng.
+
+Trước đây UI buộc backend kết nối mới cho bật rule. Bản sửa cho phép chuẩn bị
+rule Plus trong Root khi offline, đồng thời hiển thị rõ chưa remap. Quyền runtime
+và yêu cầu đủ ba gesture vẫn được kiểm tra độc lập trong backend. Power/Volume/
+chord không được mở khóa bởi thay đổi này.
+
+Đã sửa thứ tự khởi tạo: đăng ký receiver trước khi truy vấn ActivityManager,
+thêm retry giới hạn khi app-ready trùng với kết nối đang lỗi, kéo dài cửa sổ
+bootstrap hữu hạn và ghi lỗi cụ thể tại entry/profile/hook/context/socket.
+Chưa xác định nguyên nhân sâu của phiên backend cũ: thiếu log không chứng minh
+hook không nạp. Cần reboot thủ công rồi kiểm tra bản mới; chưa nghiệm thu kết nối.
+Không tự reboot hoặc đổi scope/module. Build/tests/lint và kiểm tra chữ ký đạt.
+
+Phần dưới là bằng chứng lần cài trước và trình tự kiểm tra đầy đủ.
+
 Đã cài APK runtime 0.1.0-dev thành công qua TCP và gửi lệnh mở app. TCP bị
 ngắt trước khi lấy được UI, nên chưa xác nhận màn hình sau cài. Chưa bật hook,
 chưa reboot, chưa thử remap. Scope Vector rỗng sau cài; module được xác nhận

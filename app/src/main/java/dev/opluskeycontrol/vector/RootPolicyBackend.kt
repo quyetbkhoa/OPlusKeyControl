@@ -41,12 +41,27 @@ class RootPolicyBackend(private val module: XposedModule) {
     private var writer: Thread? = null
     private val receivers = mutableListOf<BroadcastReceiver>()
     private var initializationAttempts = 0
+    private var reconnectAttempts = 0
+    private val diagnosticBudget = java.util.concurrent.atomic.AtomicInteger(16)
+    private fun diagnostic(stage: String, error: Throwable? = null) {
+        if (diagnosticBudget.getAndDecrement() > 0) Log.w("OPlusKeyControl", stage, error)
+    }
+    private val reconnect = Runnable { connect() }
+    private fun requestConnect() {
+        // An app-ready event may arrive while a failed boot connection unwinds.
+        // Queue a bounded retry window instead of losing that event to connecting.
+        worker.post {
+            reconnectAttempts = 0
+            worker.removeCallbacks(reconnect)
+            worker.post(reconnect)
+        }
+    }
     private val initializer = object : Runnable {
         override fun run() {
             if (disposed) return
             initializeContext()
             if (context != null) connect()
-            else if (++initializationAttempts < 8) worker.postDelayed(this, 1500)
+            else if (++initializationAttempts < 60) worker.postDelayed(this, 1500)
         }
     }
     @Volatile private var bound = false
@@ -63,8 +78,11 @@ class RootPolicyBackend(private val module: XposedModule) {
         }
     }
     @Synchronized fun install(loader: ClassLoader) {
-        if (disposed || installed || Build.VERSION.SDK_INT != 36 || Build.MODEL != "CPH2745" ||
-            Build.DISPLAY != PolicyInputProbe.BUILD) return
+        if (disposed || installed) return
+        if (Build.VERSION.SDK_INT != 36 || Build.MODEL != "CPH2745" || Build.DISPLAY != PolicyInputProbe.BUILD) {
+            diagnostic("RUNTIME_PROFILE_BLOCKED sdk=${Build.VERSION.SDK_INT} model=${Build.MODEL} build=${Build.DISPLAY}")
+            return
+        }
         try {
             val ims = loader.loadClass("com.android.server.input.InputManagerService")
             val method = ims.getDeclaredMethod("interceptKeyBeforeQueueing", KeyEvent::class.java, Int::class.javaPrimitiveType)
@@ -74,7 +92,7 @@ class RootPolicyBackend(private val module: XposedModule) {
                 try {
                     val event = chain.getArg(0) as KeyEvent
                     if (event.keyCode == 780 && event.scanCode == 735) {
-                        if (socket == null) connect()
+                        if (socket == null) requestConnect()
                         synchronized(lock) {
                             val driverMatches = event.device?.name == "gpio-keys"
                             if (!driverMatches || !ownerUserActive) session.disconnect()
@@ -94,8 +112,8 @@ class RootPolicyBackend(private val module: XposedModule) {
             installed = true
             worker.post(initializer) // finite bootstrap retries; no standby polling
             writer = Thread({ writeActions() }, "OPlusKeyControl-handoff").apply { isDaemon = true; start() }
-            Log.i("OPlusKeyControl", "RUNTIME_ATTACHED experimental complete-coverage Plus only")
-        } catch (e: Throwable) { Log.e("OPlusKeyControl", "RUNTIME_BLOCKED " + e.javaClass.simpleName) }
+            diagnostic("RUNTIME_ATTACHED experimental complete-coverage Plus only")
+        } catch (e: Throwable) { diagnostic("RUNTIME_BLOCKED", e) }
     }
     @Synchronized private fun initializeContext() {
         if (context != null) return
@@ -103,9 +121,8 @@ class RootPolicyBackend(private val module: XposedModule) {
             val at = Class.forName("android.app.ActivityThread")
             val instance = at.getDeclaredMethod("currentActivityThread").invoke(null) ?: return
             context = at.getDeclaredMethod("getSystemContext").invoke(instance) as Context
-            ownerUserActive = Class.forName("android.app.ActivityManager").getDeclaredMethod("getCurrentUser").invoke(null) == 0
             val receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context, intent: Intent) { connect() }
+                override fun onReceive(context: Context, intent: Intent) { requestConnect() }
             }
             context!!.registerReceiver(receiver, IntentFilter(PolicyWire.READY), PolicyWire.PERMISSION, worker, Context.RECEIVER_EXPORTED)
             receivers += receiver
@@ -131,18 +148,27 @@ class RootPolicyBackend(private val module: XposedModule) {
             }
             context!!.registerReceiver(users, IntentFilter("android.intent.action.USER_SWITCHED"), null, worker, Context.RECEIVER_EXPORTED)
             receivers += users
-        } catch (_: Throwable) {
+        } catch (failure: Throwable) {
+            diagnostic("RUNTIME_CONTEXT_FAILED", failure)
             for (receiver in receivers) runCatching { context?.unregisterReceiver(receiver) }
             receivers.clear(); context = null
         }
     }
     private fun connect() {
-        if (disposed || socket != null || !connecting.compareAndSet(false, true)) return
+        if (disposed || socket != null) return
+        if (!connecting.compareAndSet(false, true)) {
+            worker.removeCallbacks(reconnect)
+            if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+            return
+        }
         Thread({
             var candidate: LocalSocket? = null
             try {
                 initializeContext()
                 val ctx = context ?: return@Thread
+                // ActivityManager may not be published when the early Vector
+                // callback runs. Register readiness receivers before querying it.
+                ownerUserActive = Class.forName("android.app.ActivityManager").getDeclaredMethod("getCurrentUser").invoke(null) == 0
                 if (!ownerUserActive) return@Thread
                 val uid = ctx.packageManager.getApplicationInfo("dev.opluskeycontrol", 0).uid
                 val local = LocalSocket(); candidate = local
@@ -151,6 +177,7 @@ class RootPolicyBackend(private val module: XposedModule) {
                 OsTimeout.set(local)
                 if (disposed) return@Thread
                 socket = local
+                diagnostic("RUNTIME_CONNECTED")
                 worker.post {
                     if (socket === local && !bound) {
                         bound = runCatching { ctx.bindService(Intent().setComponent(ComponentName("dev.opluskeycontrol",
@@ -174,10 +201,14 @@ class RootPolicyBackend(private val module: XposedModule) {
                         worker.removeCallbacks(deadline)
                     }
                 }
-            } catch (_: Exception) { }
+            } catch (failure: Exception) { diagnostic("RUNTIME_CONNECT_FAILED", failure) }
             finally {
                 if (socket === candidate) drop()
                 runCatching { candidate?.close() }; connecting.set(false)
+                if (!disposed && socket == null && reconnectAttempts < 5) worker.post {
+                    worker.removeCallbacks(reconnect)
+                    if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+                }
             }
         }, "OPlusKeyControl-connect").apply { isDaemon = true; start() }
     }
@@ -216,6 +247,8 @@ class RootPolicyBackend(private val module: XposedModule) {
     private fun dispose() {
         if (disposed) return
         disposed = true
+        worker.removeCallbacks(reconnect)
+        worker.removeCallbacks(initializer)
         drop()
         runCatching { handle?.unhook() }; handle = null
         writer?.interrupt(); writer = null

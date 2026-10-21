@@ -135,8 +135,11 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                             ScheduleText(rule.schedule)
                             Text(stringResource(R.string.priority_value, rule.priority))
                             Text(stringResource(Capabilities.trigger(context, config.tier, rule.trigger).reason), style = MaterialTheme.typography.bodySmall)
+                            if (Capabilities.action(context, rule.action).status != Support.SUPPORTED) {
+                                Text(stringResource(Capabilities.action(context, rule.action).reason), style = MaterialTheme.typography.bodySmall)
+                            }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Switch(rule.enabled, enabled = rule.enabled || (Capabilities.trigger(context, config.tier, rule.trigger).status == Support.SUPPORTED && Capabilities.action(context, rule.action).status == Support.SUPPORTED), onCheckedChange = { checked -> app.store.mutate { c -> c.copy(rules = c.rules.map { if (it.id == rule.id) it.copy(enabled = checked) else it }) } })
+                                Switch(rule.enabled, enabled = rule.enabled || ((Capabilities.configurableTrigger(config.tier, rule.trigger) || Capabilities.trigger(context, config.tier, rule.trigger).status == Support.SUPPORTED) && Capabilities.action(context, rule.action).status == Support.SUPPORTED), onCheckedChange = { checked -> app.store.mutate { c -> c.copy(rules = c.rules.map { if (it.id == rule.id) it.copy(enabled = checked) else it }) } })
                                 TextButton(onClick = { editing = rule; editor = true }) { Text(stringResource(R.string.edit)) }
                                 TextButton(onClick = { app.store.mutate { c -> c.copy(rules = c.rules.filterNot { it.id == rule.id }) } }) { Text(stringResource(R.string.delete)) }
                             }
