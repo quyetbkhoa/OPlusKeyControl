@@ -5,6 +5,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PolicyWireTest {
+    @Test fun binderUtf8RoundTripAndBoundary() {
+        val text = "Tiếng Việt 🔦"
+        assertEquals(text, PolicyWire.binderText(PolicyWire.binderText(text)))
+        assertEquals(PolicyWire.MAX_BINDER_BYTES, PolicyWire.binderText("a".repeat(PolicyWire.MAX_BINDER_BYTES)).size)
+    }
+    @Test(expected = IllegalArgumentException::class) fun binderRejectsOversizedUtf8ByBytes() {
+        PolicyWire.binderText("ệ".repeat(PolicyWire.MAX_BINDER_BYTES / 3 + 1))
+    }
+    @Test(expected = IllegalArgumentException::class) fun binderRejectsEmptyIncomingConfiguration() {
+        PolicyWire.binderText(byteArrayOf())
+    }
+    @Test(expected = IllegalArgumentException::class) fun binderRejectsOversizedIncomingConfiguration() {
+        PolicyWire.binderText(ByteArray(PolicyWire.MAX_BINDER_BYTES + 1))
+    }
     @Test fun utf8UsesBytesNotCharacters() {
         val buffer = ByteArrayOutputStream()
         val original = "Tiếng Việt · Plus 🔦"

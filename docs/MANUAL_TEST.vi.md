@@ -1,5 +1,30 @@
 # Tự kiểm tra OPlusKeyControl — 2026-10-22
 
+## Sửa nguyên nhân backend không kết nối: Binder
+
+Đã xác nhận hook chạy và receiver BACKEND_READY tồn tại trong system_server.
+Khi yêu cầu kết nối lại, log trực tiếp báo SELinux `avc: denied { connectto }`:
+nguồn `system_server`, đích socket app `untrusted_app`. Đây là nguyên nhân đã
+quan sát được, không phải suy luận từ việc thiếu log khởi tạo.
+
+Mã mới bỏ kênh socket, dùng Binder qua service riêng không export. App chỉ nhận
+UID 1000; callback phía hệ thống chỉ nhận UID thật của app. Cấu hình giới hạn
+256 KiB, mất Binder/hủy phiên sẽ trả phím về hệ thống. Không đổi SELinux,
+không thêm module, không mở khóa Power/Volume/chord. Các kiểm thử payload bổ sung
+không thay thế kiểm tra Binder trên điện thoại. Chưa nghiệm thu remap bản Binder.
+
+Sau khi cài cần tự reboot một lần để nạp mã hệ thống mới, rồi kiểm tra dòng
+Backend Plus. Giữ nguyên rule cũ. Rule nhấn đúp hiện chỉ 22:00–06:00, nên ngoài
+giờ này vẫn không đủ ba gesture để bản thử nghiệm chiếm Plus. Chỉ đổi lịch hoặc
+hành động sau khi đã xác nhận backend kết nối; không tự chạy thử ghi âm.
+
+Các mục bên dưới ghi lại các phiên bản trước để phân biệt bằng chứng.
+
+Bản Binder đã cài, hash trên máy khớp:
+`4e65ee5fac465278ea62a098a552459b68b3459645ac5c7524697d3084c35d91`.
+Dữ liệu cấu hình trước/sau cài giống hệt từng byte. UI mở được; 105 kiểm thử đạt,
+lint 0 lỗi/22 cảnh báo. Đang chờ reboot thủ công để nạp Binder; chưa xác nhận kết nối.
+
 ## Cập nhật sửa công tắc rule
 
 Đã cài bản sửa, SHA-256 `2645a14e7c913d438f8b2fdc9213c892a08e5149438bc0104ef4b9aa9625d1b5`.

@@ -1,19 +1,16 @@
 package dev.opluskeycontrol.vector
 
 import android.content.*
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.os.*
 import android.util.Log
 import android.view.KeyEvent
 import dev.opluskeycontrol.domain.*
 import dev.opluskeycontrol.input.PolicyWire
+import dev.opluskeycontrol.input.PolicyBinder
 import dev.opluskeycontrol.storage.RuleCodec
 import dev.opluskeycontrol.actions.RecorderService
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.time.ZonedDateTime
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,7 +27,10 @@ class RootPolicyBackend(private val module: XposedModule) {
     private val thread by lazy { HandlerThread("OPlusKeyControl-policy").apply { start() } }
     private val worker by lazy { Handler(thread.looper) }
     private var context: Context? = null
-    @Volatile private var socket: LocalSocket? = null
+    @Volatile private var peer: IBinder? = null
+    @Volatile private var callback: IBinder? = null
+    @Volatile private var connection: ServiceConnection? = null
+    private var peerDeath: IBinder.DeathRecipient? = null
     @Volatile private var revision = 0L
     @Volatile private var recording = false
     @Volatile private var ownerUserActive = false
@@ -64,12 +64,12 @@ class RootPolicyBackend(private val module: XposedModule) {
             else if (++initializationAttempts < 60) worker.postDelayed(this, 1500)
         }
     }
-    @Volatile private var bound = false
-    private val keeper = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName, service: IBinder) = Unit
-        override fun onServiceDisconnected(name: ComponentName) { drop() }
-        override fun onBindingDied(name: ComponentName) { drop() }
-        override fun onNullBinding(name: ComponentName) { drop() }
+    private val bindTimeout = Runnable {
+        if (peer == null && connection != null) {
+            diagnostic("RUNTIME_BIND_TIMEOUT")
+            drop()
+            if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+        }
     }
     private val deadline = Runnable {
         synchronized(lock) {
@@ -92,7 +92,7 @@ class RootPolicyBackend(private val module: XposedModule) {
                 try {
                     val event = chain.getArg(0) as KeyEvent
                     if (event.keyCode == 780 && event.scanCode == 735) {
-                        if (socket == null) requestConnect()
+                        if (peer == null) requestConnect()
                         synchronized(lock) {
                             val driverMatches = event.device?.name == "gpio-keys"
                             if (!driverMatches || !ownerUserActive) session.disconnect()
@@ -155,62 +155,91 @@ class RootPolicyBackend(private val module: XposedModule) {
         }
     }
     private fun connect() {
-        if (disposed || socket != null) return
-        if (!connecting.compareAndSet(false, true)) {
-            worker.removeCallbacks(reconnect)
-            if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
-            return
-        }
-        Thread({
-            var candidate: LocalSocket? = null
-            try {
-                initializeContext()
-                val ctx = context ?: return@Thread
-                // ActivityManager may not be published when the early Vector
-                // callback runs. Register readiness receivers before querying it.
-                ownerUserActive = Class.forName("android.app.ActivityManager").getDeclaredMethod("getCurrentUser").invoke(null) == 0
-                if (!ownerUserActive) return@Thread
-                val uid = ctx.packageManager.getApplicationInfo("dev.opluskeycontrol", 0).uid
-                val local = LocalSocket(); candidate = local
-                local.connect(LocalSocketAddress(PolicyWire.NAME, LocalSocketAddress.Namespace.ABSTRACT))
-                require(local.peerCredentials.uid == uid && uid != Process.SYSTEM_UID)
-                OsTimeout.set(local)
-                if (disposed) return@Thread
-                socket = local
-                diagnostic("RUNTIME_CONNECTED")
-                worker.post {
-                    if (socket === local && !bound) {
-                        bound = runCatching { ctx.bindService(Intent().setComponent(ComponentName("dev.opluskeycontrol",
-                            "dev.opluskeycontrol.input.BackendKeeperService")), Context.BIND_AUTO_CREATE, { worker.post(it) }, keeper) }.getOrDefault(false)
-                    }
+        if (disposed || peer != null || connection != null || !connecting.compareAndSet(false, true)) return
+        try {
+            initializeContext()
+            val ctx = context ?: return
+            ownerUserActive = Class.forName("android.app.ActivityManager").getDeclaredMethod("getCurrentUser").invoke(null) == 0
+            if (!ownerUserActive) return
+            val info = ctx.packageManager.getApplicationInfo("dev.opluskeycontrol", 0)
+            // Never restart an explicitly force-stopped app from a physical key.
+            if (info.flags and android.content.pm.ApplicationInfo.FLAG_STOPPED != 0) return
+            val uid = info.uid
+            require(uid != Process.SYSTEM_UID && uid >= 10000)
+            val candidate = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                    if (disposed || connection !== this) return
+                    try {
+                        val endpoint = object : Binder() {
+                            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                                if (code == INTERFACE_TRANSACTION) { reply?.writeString(PolicyBinder.DESCRIPTOR); return true }
+                                if (getCallingUid() != uid || callback !== this) return false
+                                return try {
+                                    data.enforceInterface(PolicyBinder.DESCRIPTOR)
+                                    when (code) {
+                                        PolicyBinder.CONFIG -> {
+                                            val version = data.readLong()
+                                            val bytes = requireNotNull(data.createByteArray())
+                                            require(bytes.size in 1..PolicyWire.MAX_BINDER_BYTES)
+                                            val mask = data.readInt(); val isRecording = data.readInt()
+                                            require(data.dataAvail() == 0 && isRecording in 0..1 && mask ushr ActionKind.entries.size == 0)
+                                            worker.post {
+                                                if (callback !== this || peer !== service || disposed) return@post
+                                                try {
+                                                    require(version > revision)
+                                                    val configuration = RuleCodec.decode(PolicyWire.binderText(bytes))
+                                                    val allowed = ActionKind.entries.filter { mask and (1 shl it.ordinal) != 0 }.toSet()
+                                                    synchronized(lock) {
+                                                        revision = version; recording = isRecording == 1
+                                                        session.configure(PolicyConfiguration(configuration.rules, configuration.enabled, configuration.tier), configuration.timing,
+                                                            PolicyProof(Build.DISPLAY, setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG).map { Trigger(Button.PLUS, it) }.toSet(), true),
+                                                            BackendLease(version, Long.MAX_VALUE, true, allowed))
+                                                        worker.removeCallbacks(deadline)
+                                                    }
+                                                } catch (failure: Exception) { diagnostic("RUNTIME_CONFIG_FAILED", failure); drop() }
+                                            }
+                                        }
+                                        PolicyBinder.DISCONNECT -> {
+                                            val retry = data.readInt()
+                                            require(retry in 0..1 && data.dataAvail() == 0)
+                                            worker.post { if (callback === this) {
+                                                drop()
+                                                if (retry == 1 && ++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+                                            } }
+                                        }
+                                        else -> return false
+                                    }
+                                    true
+                                } catch (failure: Exception) {
+                                    worker.post { if (callback === this) { diagnostic("RUNTIME_PARCEL_FAILED", failure); drop() } }
+                                    false
+                                }
+                            }
+                        }
+                        val recipient = IBinder.DeathRecipient {
+                            if (peer === service) drop()
+                        }
+                        service.linkToDeath(recipient, 0)
+                        peerDeath = recipient; peer = service; callback = endpoint
+                        worker.removeCallbacks(bindTimeout)
+                        PolicyBinder.send(service, PolicyBinder.HELLO) { it.writeStrongBinder(endpoint) }
+                        diagnostic("RUNTIME_BINDER_CONNECTED")
+                    } catch (failure: Exception) { diagnostic("RUNTIME_HELLO_FAILED", failure); drop() }
                 }
-                DataOutputStream(local.outputStream).apply { writeInt(PolicyWire.MAGIC); flush() }
-                val input = DataInputStream(local.inputStream)
-                while (!disposed && socket === local) {
-                    require(input.readInt() == PolicyWire.CONFIG)
-                    val version = input.readLong(); require(version > 0)
-                    val configuration = RuleCodec.decode(PolicyWire.readText(input))
-                    val mask = input.readInt()
-                    recording = input.readBoolean()
-                    val allowed = ActionKind.entries.filter { mask and (1 shl it.ordinal) != 0 }.toSet()
-                    synchronized(lock) {
-                        revision = version
-                        session.configure(PolicyConfiguration(configuration.rules, configuration.enabled, configuration.tier), configuration.timing,
-                            PolicyProof(Build.DISPLAY, setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG).map { Trigger(Button.PLUS, it) }.toSet(), true),
-                            BackendLease(version, Long.MAX_VALUE, true, allowed))
-                        worker.removeCallbacks(deadline)
-                    }
-                }
-            } catch (failure: Exception) { diagnostic("RUNTIME_CONNECT_FAILED", failure) }
-            finally {
-                if (socket === candidate) drop()
-                runCatching { candidate?.close() }; connecting.set(false)
-                if (!disposed && socket == null && reconnectAttempts < 5) worker.post {
-                    worker.removeCallbacks(reconnect)
-                    if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
-                }
+                override fun onServiceDisconnected(name: ComponentName) { if (connection === this) drop() }
+                override fun onBindingDied(name: ComponentName) { if (connection === this) drop() }
+                override fun onNullBinding(name: ComponentName) { if (connection === this) drop() }
             }
-        }, "OPlusKeyControl-connect").apply { isDaemon = true; start() }
+            connection = candidate
+            val accepted = ctx.bindService(Intent().setComponent(ComponentName("dev.opluskeycontrol",
+                "dev.opluskeycontrol.input.BackendKeeperService")), Context.BIND_AUTO_CREATE, { worker.post(it) }, candidate)
+            if (!accepted) { connection = null; diagnostic("RUNTIME_BIND_REJECTED") }
+            else worker.postDelayed(bindTimeout, 5000)
+        } catch (failure: Exception) { diagnostic("RUNTIME_BIND_FAILED", failure); drop() }
+        finally {
+            connecting.set(false)
+            if (!disposed && peer == null && connection == null && ++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+        }
     }
     private fun schedule() {
         worker.removeCallbacks(deadline)
@@ -225,10 +254,13 @@ class RootPolicyBackend(private val module: XposedModule) {
         while (!disposed) {
             val action = try { queue.take() } catch (_: InterruptedException) { return }
             val version = action.session; val id = action.rule.id
-            val peer = socket ?: continue
+            val target = peer ?: continue
+            val endpoint = callback ?: continue
             if (version != revision) continue
             try {
-                DataOutputStream(peer.outputStream).apply { writeInt(PolicyWire.ACTION); writeLong(version); writeUTF(id); flush() }
+                PolicyBinder.send(target, PolicyBinder.ACTION) {
+                    it.writeStrongBinder(endpoint); it.writeLong(version); it.writeString(id)
+                }
                 if (action.rule.action.kind == ActionKind.RECORD_TOGGLE) {
                     val ctx = context ?: continue
                     val intent = Intent().setComponent(ComponentName("dev.opluskeycontrol", "dev.opluskeycontrol.actions.RecorderService"))
@@ -236,13 +268,29 @@ class RootPolicyBackend(private val module: XposedModule) {
                     else ctx.startForegroundService(intent.setAction(RecorderService.TOGGLE).putExtra("seconds", action.rule.action.durationSeconds)
                         .putExtra("originGesture", action.rule.trigger.gesture.name).putExtra("originRule", action.rule.id))
                 }
-            } catch (_: Exception) { if (socket === peer) drop() }
+            } catch (_: Exception) { if (peer === target) drop() }
         }
     }
     private fun drop() {
-        synchronized(lock) { session.disconnect(); revision = 0; queue.clear(); worker.removeCallbacks(deadline) }
-        val old = socket; socket = null; runCatching { old?.close() }
-        worker.post { if (socket == null && bound) { bound = false; runCatching { context?.unbindService(keeper) } } }
+        val old: IBinder?
+        val oldCallback: IBinder?
+        val oldConnection: ServiceConnection?
+        val oldDeath: IBinder.DeathRecipient?
+        synchronized(lock) {
+            session.disconnect(); revision = 0; queue.clear(); worker.removeCallbacks(deadline)
+            old = peer; oldCallback = callback; oldConnection = connection; oldDeath = peerDeath
+            peer = null; callback = null; connection = null; peerDeath = null
+        }
+        worker.post {
+            worker.removeCallbacks(bindTimeout)
+            if (old != null) {
+                if (oldDeath != null) runCatching { old.unlinkToDeath(oldDeath, 0) }
+                if (oldCallback != null) runCatching {
+                    PolicyBinder.send(old, PolicyBinder.DISCONNECT) { it.writeStrongBinder(oldCallback) }
+                }
+            }
+            if (oldConnection != null) runCatching { context?.unbindService(oldConnection) }
+        }
     }
     private fun dispose() {
         if (disposed) return
@@ -257,10 +305,4 @@ class RootPolicyBackend(private val module: XposedModule) {
         // This runs on the policy worker; its queued unbind executes before shutdown.
         worker.post { thread.quitSafely() }
     }
-}
-
-@androidx.annotation.RequiresApi(29)
-private object OsTimeout {
-    fun set(socket: LocalSocket) = android.system.Os.setsockoptTimeval(socket.fileDescriptor,
-        android.system.OsConstants.SOL_SOCKET, android.system.OsConstants.SO_SNDTIMEO, android.system.StructTimeval.fromMillis(1500))
 }

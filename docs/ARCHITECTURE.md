@@ -4,7 +4,10 @@ A separate finite observation APK proved Plus reaches IMS; see POLICY_PROBE.md.
 An opt-in runtime implementation now connects policy ownership, authenticated
 transport, rules and actions; see RUNTIME_BACKEND.md for complete-coverage limits,
 lifecycle design and device-test gaps. Normal build callbacks compile to no-op.
-No runtime remapping build has been activated. The original design notes below
+The runtime was activated manually, but transport failed: SELinux denied the
+system_server-to-app Unix socket. The replacement private Binder service is
+implemented and awaiting device acceptance; no SELinux rules are changed.
+The original design notes below
 predate that candidate and describe the normal observer-only build.
 
 `InputSource -> ownership -> ButtonEvent(monotonic) -> GestureEngine -> RuleResolver(zoned clock) -> ActionExecutor`

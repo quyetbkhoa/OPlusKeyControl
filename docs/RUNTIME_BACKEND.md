@@ -1,5 +1,29 @@
 # Experimental runtime backend — not device-accepted
 
+## Latest fix: SELinux-denied socket replaced with Binder
+
+On 2026-10-22 live inspection confirmed the policy worker and BACKEND_READY receiver
+in system_server. An explicit ready broadcast produced `avc: denied { connectto }`
+from `u:r:system_server:s0` to the app's `u:r:untrusted_app:s0` Unix socket.
+Thus the loaded hook could not connect to the previous app transport.
+
+The replacement uses the non-exported BackendKeeperService Binder. App transactions
+require UID 1000; the system-side callback checks the actual installed app UID and
+current callback identity. Configuration is capped at 256 KiB, uses versioned
+snapshots, and does not authorize actions outside current rules. Binder death and
+explicit revocation invalidate ownership; no SELinux or framework setting changes.
+Pending app authorization can request a bounded retry; explicit revocation cannot.
+Stopped-app flags prevent a physical key from auto-starting a force-stopped app.
+The scope watcher remains transient and unchanged.
+
+Installed APK SHA-256:
+`4e65ee5fac465278ea62a098a552459b68b3459645ac5c7524697d3084c35d91`.
+Device file hash matched; private stored configuration was byte-for-byte identical
+before and after the update. UI opened. 105 JVM tests passed; lint 0 errors and
+22 warnings. A manual reboot is pending to activate and validate the Binder code.
+No physical action, rule modification or reboot was performed by the agent.
+The sections below retain earlier evidence and historical artifact hashes.
+
 The physical observation test established Plus keyCode 780 / scanCode 735, not
 permission to replace OEM behavior. This candidate is a separate `-PopcRuntime=true`
 APK. On 2026-10-22 the runtime APK was installed successfully with user approval
@@ -39,13 +63,15 @@ agent. New system-server code awaits a manual reboot and remains unverified.
   OEM. It does not replay an already owned press when an executor crashes. New
   presses pass through. Schedule/config changes during a held gesture may cancel
   that gesture rather than execute an action from an obsolete configuration.
-- Authenticated local socket transport: both endpoints check SO_PEERCRED against
-  system UID / PackageManager's actual app UID. Bounded frames, versioned snapshots,
+- Private Binder service transport: both endpoints check Binder caller UID against
+  system UID / PackageManager's actual app UID. Bounded payloads, versioned snapshots,
   fixed enums/rule IDs, no arbitrary commands or intents on the wire. The app
   re-resolves rule/time/master before running an app-side action. The input path
-  does not call a socket, database, package manager or su. A bounded handoff queue
-  runs on worker threads; writes have a send timeout. No permanent wake lock.
-  At boot, system-context initialization has at most eight attempts separated by
+  does not call Binder, database, package manager or su. A bounded handoff queue
+  runs on worker threads. Transactions are one-way, configuration capped at 256 KiB;
+  binder death, explicit disconnect and package/scope changes revoke snapshots.
+  A force-stopped app is never auto-bound from a physical key. No permanent wake lock.
+  At boot, system-context initialization has at most 60 attempts separated by
   1.5 seconds because ActivityManager may not yet exist at module loading. This
   bounded bootstrap retry stops; it is not standby polling. Later reconnects are
   driven by an app-ready broadcast or physical Plus event.
@@ -69,7 +95,7 @@ agent. New system-server code awaits a manual reboot and remains unverified.
 ## Actions and boundaries
 
 - Torch uses CameraManager callbacks and CAMERA permission; manual behavior was
-  tested previously, but socket-triggered action delivery is NOT_TESTED.
+  tested previously, but Binder-triggered action delivery is NOT_TESTED.
 - App/Activity root launching uses validated ComponentName tokens, quoted shell
   arguments, the app's own user ID, enabled-target checks and Keyguard protection.
   Permission-protected activities remain blocked. Internal activities may be

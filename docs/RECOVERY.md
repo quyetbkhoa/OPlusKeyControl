@@ -45,7 +45,7 @@ intended to exit the transient root watcher when its app dies. Check the actual
 process list/helper lifetime during the approved device experiment. Do not declare
 clean uninstall from a successful build. Existing audio/photos are retained.
 No additional reboot is included in this rollback. If teardown fails, resident
-input code must still pass new presses through when its socket is gone.
+input code must still pass new presses through when its Binder peer is gone.
 
 ## Policy experiment approval
 

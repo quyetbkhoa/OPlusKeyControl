@@ -4,8 +4,9 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
-import android.net.LocalServerSocket
-import android.net.LocalSocket
+import android.os.Binder
+import android.os.IBinder
+import android.os.Parcel
 import android.os.Process
 import dev.opluskeycontrol.BuildConfig
 import dev.opluskeycontrol.KeyControlApp
@@ -16,24 +17,76 @@ import dev.opluskeycontrol.root.VectorAuthorization
 import dev.opluskeycontrol.storage.RuleCodec
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicLong
 
-/** Lives only in the app process. Both ends check SO_PEERCRED; app death closes
- * the stream, which revokes the system-server snapshot. No exported execution API.
- */
+/** Private Binder channel: UID checks on every call, death revokes authority. */
 class PolicyBridge(private val app: KeyControlApp) {
     companion object { val connected = MutableStateFlow(false) }
     private val authorization = VectorAuthorization(app.scope, app.applicationInfo.sourceDir)
     private val generation = AtomicLong()
-    private var server: LocalServerSocket? = null
-    private var peer: LocalSocket? = null
-    private var output: DataOutputStream? = null
-    private var acceptJob: Job? = null
+    @Volatile private var available = false
+    private var peer: IBinder? = null
+    private var death: IBinder.DeathRecipient? = null
     private val lock = Any()
     private var started = false
+
+    val binder = object : Binder() {
+        override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+            if (code == INTERFACE_TRANSACTION) { reply?.writeString(PolicyBinder.DESCRIPTOR); return true }
+            if (!BuildConfig.POLICY_RUNTIME || getCallingUid() != Process.SYSTEM_UID) return false
+            return try {
+                data.enforceInterface(PolicyBinder.DESCRIPTOR)
+                when (code) {
+                    PolicyBinder.HELLO -> {
+                        val callback = requireNotNull(data.readStrongBinder())
+                        require(data.dataAvail() == 0)
+                        app.scope.launch(Dispatchers.IO) {
+                            synchronized(lock) {
+                                if (!available || !authorization.allowed.value || app.store.emergency.value) {
+                                    runCatching { PolicyBinder.send(callback, PolicyBinder.DISCONNECT) {
+                                        it.writeInt(if (app.store.config.value.tier == Tier.ROOT && !app.store.emergency.value) 1 else 0)
+                                    } }
+                                    return@synchronized
+                                }
+                                closePeer()
+                                val recipient = IBinder.DeathRecipient { synchronized(lock) { if (peer === callback) closePeer(false) } }
+                                try {
+                                    callback.linkToDeath(recipient, 0)
+                                    peer = callback; death = recipient; connected.value = true
+                                    publish()
+                                } catch (_: Exception) { closePeer(false) }
+                            }
+                        }
+                    }
+                    PolicyBinder.ACTION -> {
+                        val callback = data.readStrongBinder()
+                        val revision = data.readLong(); val id = requireNotNull(data.readString())
+                        require(id.length <= 128 && data.dataAvail() == 0)
+                        app.scope.launch {
+                            synchronized(lock) {
+                                if (peer !== callback || revision != generation.get()) return@synchronized
+                                val c = effectiveConfiguration()
+                                if (!authorization.allowed.value || app.store.emergency.value || !c.enabled || c.tier != Tier.ROOT) return@synchronized
+                                val rule = c.rules.singleOrNull { it.id == id } ?: return@synchronized
+                                if (RuleResolver.resolve(c.rules, rule.trigger, ZonedDateTime.now()) != Resolution.Match(rule)) return@synchronized
+                                if (rule.action.kind != ActionKind.RECORD_TOGGLE) app.scope.launch {
+                                    app.actions.execute(rule.action, app.visible.value, rootAuthorized = true)
+                                }
+                            }
+                        }
+                    }
+                    PolicyBinder.DISCONNECT -> {
+                        val callback = data.readStrongBinder(); require(data.dataAvail() == 0)
+                        app.scope.launch(Dispatchers.IO) { synchronized(lock) { if (peer === callback) closePeer(false) } }
+                    }
+                    else -> return false
+                }
+                true
+            } catch (_: Exception) { false }
+        }
+    }
+
     fun start() {
         if (!BuildConfig.POLICY_RUNTIME || started) return
         started = true
@@ -56,56 +109,27 @@ class PolicyBridge(private val app: KeyControlApp) {
                 authorization.start()
                 if (!allowed) { withContext(Dispatchers.IO) { close() }; return@collectLatest }
                 withContext(Dispatchers.IO) {
-                    if (server == null) open()
+                    if (!available) open()
                     publish()
                 }
             }
         }
     }
     private fun open() {
-        try {
-            server = LocalServerSocket(PolicyWire.NAME)
-            acceptJob = app.scope.launch(Dispatchers.IO) {
-                val listener = server ?: return@launch
-                while (isActive) {
-                    val socket = try { listener.accept() } catch (_: Exception) { break }
-                    if (socket.peerCredentials.uid != Process.SYSTEM_UID) { socket.close(); continue }
-                    if (android.os.Build.VERSION.SDK_INT >= 29) {
-                        android.system.Os.setsockoptTimeval(socket.fileDescriptor, android.system.OsConstants.SOL_SOCKET,
-                            android.system.OsConstants.SO_SNDTIMEO, android.system.StructTimeval.fromMillis(1500))
-                    } else { socket.close(); continue }
-                    synchronized(lock) { peer?.close(); peer = socket; output = DataOutputStream(socket.outputStream) }
-                    try {
-                        val input = DataInputStream(socket.inputStream)
-                        require(input.readInt() == PolicyWire.MAGIC)
-                        connected.value = true
-                        publish()
-                        while (isActive) {
-                            require(input.readInt() == PolicyWire.ACTION)
-                            val revision = input.readLong()
-                            val id = input.readUTF()
-                            if (revision != generation.get()) continue
-                            val c = effectiveConfiguration()
-                            if (!authorization.allowed.value || app.store.emergency.value || !c.enabled || c.tier != Tier.ROOT) continue
-                            val rule = c.rules.singleOrNull { it.id == id } ?: continue
-                            if (RuleResolver.resolve(c.rules, rule.trigger, ZonedDateTime.now()) != Resolution.Match(rule)) continue
-                            app.scope.launch {
-                                // Recorder commands originate from system_server to satisfy the
-                                // platform's system-component FGS exception, not from this socket callback.
-                                if (rule.action.kind != ActionKind.RECORD_TOGGLE) app.actions.execute(rule.action, app.visible.value, rootAuthorized = true)
-                            }
-                        }
-                    } catch (_: Exception) { }
-                    finally { synchronized(lock) { socket.close(); if (peer === socket) { peer = null; output = null; connected.value = false } } }
-                }
-            }
+        synchronized(lock) {
+            available = true
             app.sendBroadcast(Intent(PolicyWire.READY).setPackage("android"), PolicyWire.PERMISSION)
-        } catch (_: Exception) { close() }
+        }
     }
-    fun refresh() { if (BuildConfig.POLICY_RUNTIME) app.scope.launch(Dispatchers.IO) { publish() } }
+    fun refresh() { if (BuildConfig.POLICY_RUNTIME) app.scope.launch(Dispatchers.IO) {
+        synchronized(lock) {
+            if (available && peer == null) app.sendBroadcast(Intent(PolicyWire.READY).setPackage("android"), PolicyWire.PERMISSION)
+            publish()
+        }
+    } }
     private fun publish() {
         synchronized(lock) {
-            val out = output ?: return
+            val target = peer ?: return
             try {
                 val c = effectiveConfiguration()
                 val ready = ActionKind.entries.filter { kind ->
@@ -121,11 +145,13 @@ class PolicyBridge(private val app: KeyControlApp) {
                         }
                     }
                 }
-                out.writeInt(PolicyWire.CONFIG); out.writeLong(generation.incrementAndGet())
-                PolicyWire.writeText(out, RuleCodec.encode(c.copy(enabled = c.enabled && !app.store.emergency.value && authorization.allowed.value)))
-                out.writeInt(ready.fold(0) { mask, kind -> mask or (1 shl kind.ordinal) }); out.flush()
-                out.writeBoolean(RecorderService.recording.value); out.flush()
-            } catch (_: Exception) { peer?.close(); output = null; connected.value = false }
+                val bytes = PolicyWire.binderText(RuleCodec.encode(c.copy(enabled = c.enabled && !app.store.emergency.value && authorization.allowed.value)))
+                PolicyBinder.send(target, PolicyBinder.CONFIG) {
+                    it.writeLong(generation.incrementAndGet()); it.writeByteArray(bytes)
+                    it.writeInt(ready.fold(0) { mask, kind -> mask or (1 shl kind.ordinal) })
+                    it.writeInt(if (RecorderService.recording.value) 1 else 0)
+                }
+            } catch (_: Exception) { closePeer() }
         }
     }
     private fun effectiveConfiguration(): dev.opluskeycontrol.storage.Configuration {
@@ -134,9 +160,14 @@ class PolicyBridge(private val app: KeyControlApp) {
         return if (RecorderService.recording.value && trigger != null) c.copy(rules = c.rules.filterNot { it.trigger.sameAs(trigger) } +
             Rule("recording-stop", trigger, Action(ActionKind.RECORD_TOGGLE), priority = 100)) else c
     }
-    private fun close() {
-        connected.value = false
-        synchronized(lock) { runCatching { peer?.close() }; peer = null; output = null }
-        runCatching { server?.close() }; server = null; acceptJob?.cancel(); acceptJob = null
+    fun disconnect() { synchronized(lock) { closePeer() } }
+    private fun closePeer(notify: Boolean = true) {
+        val old = peer; val recipient = death
+        peer = null; death = null; generation.incrementAndGet(); connected.value = false
+        if (old != null) {
+            if (recipient != null) runCatching { old.unlinkToDeath(recipient, 0) }
+            if (notify) runCatching { PolicyBinder.send(old, PolicyBinder.DISCONNECT) { it.writeInt(0) } }
+        }
     }
+    private fun close() { synchronized(lock) { available = false; closePeer() } }
 }
