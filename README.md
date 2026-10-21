@@ -3,6 +3,8 @@
 Ứng dụng Android Kotlin/Compose tùy biến nút theo lịch, đang phát triển cho
 OnePlus 15 / Android 16. **Bản 0.1.0-dev chưa remap nút thật.**
 Không phải bản nghiệm thu đầy đủ theo [yêu cầu](docs/IMPLEMENTATION_BRIEF.vi.md).
+Đã có [APK probe policy riêng](docs/POLICY_PROBE.md) để xác minh luồng Plus;
+chưa kích hoạt, không được hiểu là backend remap đã hoạt động.
 [English](README.en.md) · [Khảo sát thiết bị](docs/DEVICE_DISCOVERY.md) ·
 [Ma trận nghiệm thu](docs/ACCEPTANCE.md) · [Recovery](docs/RECOVERY.md).
 

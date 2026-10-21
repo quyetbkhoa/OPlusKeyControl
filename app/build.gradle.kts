@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+// Deliberate local opt-in build only. Normal APKs retain self scope and no policy hooks.
+val policyProbe = providers.gradleProperty("opcPolicyProbe").orNull == "true"
 android {
     namespace = "dev.opluskeycontrol"
     compileSdk = 36
@@ -11,8 +13,13 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-dev"
+        buildConfigField("boolean", "POLICY_PROBE", policyProbe.toString())
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
+    sourceSets.getByName("main").resources.directories.apply {
+        clear()
+        add(if (policyProbe) "src/policyProbe/resources" else "src/main/resources")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -1,5 +1,9 @@
 # Architecture and invariants
 
+A separate finite policy observation APK and replacement decision gate have
+since been added; see POLICY_PROBE.md. The normal build's system-server callback
+compiles to a return. No runtime action bridge/replacement is activated.
+
 `InputSource -> ownership -> ButtonEvent(monotonic) -> GestureEngine -> RuleResolver(zoned clock) -> ActionExecutor`
 
 `domain/` is JVM-only. It does not authorize suppression. An observation source

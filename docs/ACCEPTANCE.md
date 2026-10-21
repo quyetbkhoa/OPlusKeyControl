@@ -8,6 +8,10 @@ NOT_TESTED entries for manual unlocked torch, visible recorder toggle/autostop,
 stock camera open-only, self-launch, picker/wizard and persistence. Actual
 remapping/capture screen-state cells below remain NOT_TESTED.
 
+Latest backend work: POLICY_PROBE.md describes a separate, unactivated policy
+observation APK and 15 new gate tests. Total JVM count is 76 PASS. This adds no
+physical remapping acceptance result.
+
 ## Phases
 
 | Phase | Status | Scope/evidence |
