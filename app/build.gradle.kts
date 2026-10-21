@@ -32,6 +32,8 @@ dependencies {
     implementation(libs.coroutines)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
+    compileOnly(libs.libxposed.api)
     debugImplementation(libs.compose.tooling)
     testImplementation(libs.junit)
+    testImplementation(libs.json)
 }

@@ -21,7 +21,8 @@ Device serial, installed personal app lists and private logs are intentionally o
 | FACT | Stock normal intent -> .component.CameraImageActivity; secure -> .Camera | cmd package resolve-activity with -p com.oplus.camera |
 | FACT | Unscoped still-camera intent resolves to ResolverActivity | Other handlers exist; do not trust default resolution |
 | FACT | Device Dozing, idle mode false at observation | selected dumpsys power fields |
-| UNKNOWN | Runtime modern Xposed API is 101 | User reports 101; module.prop does not advertise API; current upstream master is 102 |
+| FACT (static binary) | Installed vector.dex XposedInterface.getApiVersion returns 102 | Pulled read-only; disassembled method is const/16 102; runtime probe not activated |
+| UNKNOWN | API 101 module compatibility at runtime | Probe compiles against 101.0.1; installed binary API is 102; requires approved self-scope test |
 | UNKNOWN | Reliable stock readiness, shutter command, photo acknowledgement | An intent filter alone is not evidence of capture |
 | UNKNOWN | OEM Power-double hook point and pass-through guarantees | Firmware policy source/signatures not yet verified |
 | BLOCKED | Install, accessibility activation, grant, root hook, camera capture, recording, reboot/uninstall tests | Require separate device approval per supplied brief |
@@ -38,9 +39,15 @@ configuration. Basic accessibility accepts only the verified public Volume keys.
 Power events never enter this filter. Plus and Power rules may be prepared disabled;
 no runtime claim until a firmware-specific backend is validated.
 
+Basic currently observes only and never consumes events: public single capture
+would swallow an unassigned long gesture without a verified replay/policy path.
 Shizuku binder/permission detection is real; Shizuku is not an input-capture API.
-Root is opt-in, no automatic su fallback from Basic/Shizuku. Do not replace the
-existing power daemon or enable a system_server hook before conflict review.
+Root is opt-in, no automatic su fallback from Basic/Shizuku. No system_server hook
+is registered. The APK contains an API 101.0.1 compatibility probe scoped only to
+its own package; this is not a remapping module.
+User subsequently confirmed the Power Key Torch Controller was manually disabled
+and instructed us to ignore it. No module state was changed by this project.
+Follow-up read-only `ls` confirmed its `disable` file exists.
 Experimental adapters must fail open; no input grabbing/reinjection is shipped.
 
 ## Primary sources consulted
@@ -55,11 +62,37 @@ Experimental adapters must fail open; no input grabbing/reinjection is shipped.
 
 ## Approved-test boundary and rollback
 
-First proposed device test: install this debug APK, open UI, manually grant camera,
-microphone/notifications only when testing actions, then optionally enable Basic
-accessibility. No Power/Plus hook. Disable from UI/tile before uninstall; verify
-volume pass-through on unmatched rules, disconnect and removal. Camera capture,
+User approved installing the debug APK and opening/testing UI only. No runtime
+permission grant, Accessibility/Vector activation, remapping, recording, photo,
+reboot or uninstall was authorized in this approval. ADB subsequently reported no
+connected devices; awaiting USB reconnection before using that approval.
+Future action tests require their own scope. Disable from UI/tile before an
+approved uninstall; verify volume pass-through and removal. Camera capture,
 recording, internal-activity launch and every reboot need their own concrete scope.
-For future Vector experiments: validate exact API 101 artifact and firmware method,
+For future Vector experiments: validate API 101-on-102 runtime and firmware method,
 document manager disable/recovery before activation. A bootloop-risk experiment is
 not authorized by permission to build/install the UI.
+
+## Additional offline binary evidence
+
+Private copies are Git-ignored and never packaged or redistributed:
+
+| File | SHA-256 |
+|---|---|
+| vector.dex | fc5ae6b445a9b35216474176ced3e2e874067e1ccb4b8a146d88747b02cfaea1 |
+| oplus-services.jar | 1db4bc70675a1f4e96aa4d1bad60d106cd9b98ccebcc664ff05a54e6f9a0de3f |
+| services.jar | 33ae2b91bdd1284de98c419f3dba06d0a77ac42fa4413d2ebd1e6c5870ae31c9 |
+
+FACT: OEM policy contains `OplusSmartButtonController`,
+`OplusQuickAppController.startQuickApp(boolean)` and
+`PhoneWindowManagerExtImpl.oplusPowerPress(long,boolean,int,int)`, alongside
+explicit SOS early/late processing. The latter method updates power press count
+and schedules sleep; hooking it wholesale would risk single-press semantics.
+`isOplusSpecialKey(int)` covers OEM code ranges, not a verified Plus identity.
+The presence of SmartButtonController alone does not prove it owns this model's
+Plus Key. These are candidate research paths, not activated/validated hooks.
+
+The current upstream API is 102; API 101.0.1 source was inspected at tag commit
+`edeb8379c067b16b91af3cb526f5f04db25c06b6`. It uses a no-arg XposedModule,
+onModuleLoaded callback, interceptor Chain API and META-INF/xposed metadata.
+Do not copy the old API-100 constructor examples.

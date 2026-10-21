@@ -10,7 +10,7 @@ data class Timing(val doubleMs: Long = 300, val longMs: Long = 600, val chordMs:
  * Serialized owner calls advance only at nextDeadline, never on a repeating idle timer.
  */
 class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timing = Timing()) {
-    private data class Press(val down: Long, var consumed: Boolean = false)
+    private data class Press(val down: Long, var consumed: Boolean = false, val secondClick: Boolean = false)
     private val held = mutableMapOf<Button, Press>()
     private val pending = mutableMapOf<Button, Long>()
     private val lastUp = mutableMapOf<Button, Long>()
@@ -46,9 +46,11 @@ class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timin
         when (event.edge) {
             Edge.DOWN -> {
                 if (button in held || event.timeMs - (lastUp[button] ?: Long.MIN_VALUE / 2) < timing.debounceMs) return result
-                held[button] = Press(event.timeMs)
+                val secondClick = pending.remove(button) != null && supports(button, Gesture.DOUBLE)
+                held[button] = Press(event.timeMs, secondClick = secondClick)
                 val chord = enabled.firstOrNull { it.gesture == Gesture.CHORD && button in setOf(it.button, it.partner) &&
-                    held[it.button]?.consumed == false && held[it.partner]?.consumed == false }
+                    held[it.button]?.consumed == false && held[it.partner]?.consumed == false &&
+                    (button == it.partner || event.timeMs - held.getValue(it.partner!!).down <= timing.chordMs) }
                 if (chord != null) {
                     // A held modifier is valid beyond the simultaneous window until committed.
                     held.getValue(chord.button).consumed = true
@@ -60,8 +62,8 @@ class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timin
             Edge.UP -> {
                 val press = held.remove(button) ?: return result
                 lastUp[button] = event.timeMs
-                if (!press.consumed) {
-                    if (pending.remove(button) != null && supports(button, Gesture.DOUBLE)) result += Trigger(button, Gesture.DOUBLE)
+                if (!press.consumed && !(button == Button.POWER && event.timeMs - press.down >= timing.longMs)) {
+                    if (press.secondClick && supports(button, Gesture.DOUBLE)) result += Trigger(button, Gesture.DOUBLE)
                     else if (supports(button, Gesture.DOUBLE)) pending[button] = event.timeMs
                     else if (supports(button, Gesture.SINGLE)) result += Trigger(button, Gesture.SINGLE)
                 }

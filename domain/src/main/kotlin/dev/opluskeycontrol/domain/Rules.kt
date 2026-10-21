@@ -40,7 +40,10 @@ data class Schedule(val startMinute: Int, val endMinute: Int, val days: Set<DayO
             repeat(length) { add((base + startMinute + it) % 10080) }
         }
     }
-    fun overlaps(other: Schedule): Boolean = weekMinutes().any { it in other.weekMinutes() }
+    fun overlaps(other: Schedule): Boolean {
+        val otherMinutes = other.weekMinutes()
+        return weekMinutes().any { it in otherMinutes }
+    }
 }
 
 data class Action(val kind: ActionKind, val packageName: String? = null, val activity: String? = null, val durationSeconds: Int = 300) {

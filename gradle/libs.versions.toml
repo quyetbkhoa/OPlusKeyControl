@@ -12,11 +12,13 @@ compose-ui = { module = "androidx.compose.ui:ui" }
 compose-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 material = { module = "androidx.compose.material3:material3" }
-icons = { module = "androidx.compose.material:material-icons-extended" }
+icons = { module = "androidx.compose.material:material-icons-core" }
 datastore = { module = "androidx.datastore:datastore-preferences", version = "1.2.0" }
 coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version = "1.10.2" }
 shizuku-api = { module = "dev.rikka.shizuku:api", version = "13.1.5" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version = "13.1.5" }
+libxposed-api = { module = "io.github.libxposed:api", version = "101.0.1" }
+json = { module = "org.json:json", version = "20240303" }
 junit = { module = "junit:junit", version = "4.13.2" }
 
 [plugins]
