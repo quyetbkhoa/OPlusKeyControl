@@ -1,0 +1,25 @@
+[versions]
+agp = "9.1.0"
+kotlin = "2.4.10"
+compose = "2026.02.01"
+
+[libraries]
+core = { module = "androidx.core:core-ktx", version = "1.18.0" }
+activity = { module = "androidx.activity:activity-compose", version = "1.13.0" }
+lifecycle = { module = "androidx.lifecycle:lifecycle-runtime-compose", version = "2.10.0" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+material = { module = "androidx.compose.material3:material3" }
+icons = { module = "androidx.compose.material:material-icons-extended" }
+datastore = { module = "androidx.datastore:datastore-preferences", version = "1.2.0" }
+coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version = "1.10.2" }
+shizuku-api = { module = "dev.rikka.shizuku:api", version = "13.1.5" }
+shizuku-provider = { module = "dev.rikka.shizuku:provider", version = "13.1.5" }
+junit = { module = "junit:junit", version = "4.13.2" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
