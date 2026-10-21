@@ -1,8 +1,37 @@
 # Plus policy probe: concrete next experiment
 
 This is **not a working remapper**. The normal APK does not register the input
-probe. A separate opt-in build is needed and no framework configuration has yet
-been changed. The installed module remains disabled.
+probe. A separate opt-in build is needed. The first approved on-device attempt
+did not load the policy probe; rollback is complete and the module is disabled.
+
+## Device attempt and corrected scope (2026-10-22)
+
+The user approved installation/activation and one reboot, then rebooted manually
+and reconnected TCP. Boot completion was 1. Vector loaded VectorProbe in the
+application process and reported runtime API 102 / version 3112. The boot's
+system_server module log did not include OPlusKeyControl or PROBE_READY. No Plus
+press was requested and no Android keycode was established by this attempt.
+
+Root cause: this Vector build stores the system-server target under `system`,
+not the Android package name `android`. The first APK's fixed scope and CLI row
+both used `android`. At installed commit ddeed8ca, ModuleDatabase's
+`systemServerModuleRows()` selects only app_pkg_name=system; ConfigCache handles
+that special target explicitly. See the exact sources:
+
+- https://github.com/JingMatrix/Vector/blob/ddeed8ca/daemon/src/main/kotlin/org/matrix/vector/daemon/data/ModuleDatabase.kt
+- https://github.com/JingMatrix/Vector/blob/ddeed8ca/daemon/src/main/kotlin/org/matrix/vector/daemon/data/ConfigCache.kt
+
+The corrected probe declares `system` and `dev.opluskeycontrol`. It builds and
+passes APK metadata/API exclusion audit and apksigner verification. Generated
+BuildConfig confirms POLICY_PROBE=true. No observer code changed. Packaging now
+has an explicit --policy-probe option that rejects an unexpected scope and keeps
+probe artifacts/evidence separate from the normal APK.
+
+Rollback verified: only OPlusKeyControl disabled, scope empty, normal APK restored
+with installed SHA-256 matching the normal artifact below. Every other Vector
+module's enabled/disabled status matches the saved baseline. No settings, key
+layouts, Power module or framework installation were changed. The corrected
+probe has not been installed/activated; another boot experiment requires consent.
 
 ## Verified prerequisites
 
@@ -20,8 +49,9 @@ been changed. The installed module remains disabled.
 ```powershell
 # Normal build: self scope, BuildConfig.POLICY_PROBE=false
 .\gradlew.bat :app:assembleDebug
-# Experimental build: android + self scope, observation only
+# Experimental build: Vector system + self scope, observation only
 .\gradlew.bat -PopcPolicyProbe=true :app:assembleDebug
+python tools/package_debug.py --policy-probe
 ```
 
 Build output paths overlap, so copy/audit each artifact before switching build
@@ -50,7 +80,7 @@ and every reboot. User approval to test UI/manual actions did not explicitly
 approve this system-server experiment. Do not enable it automatically.
 
 Proposed exact scope: install the separately audited probe APK; enable only
-dev.opluskeycontrol in Vector with android/self scope; **one reboot** to load it;
+dev.opluskeycontrol in Vector with system/self scope; **one reboot** to load it;
 after normal boot the user presses/releases Plus once; inspect only the probe
 tag; disable this module and restore the normal APK. No Power/combo/SOS test,
 remapping, setting write, module-framework replacement or second reboot.
@@ -71,14 +101,15 @@ documents early-boot repeated VolumeDown Safe Mode (all modules disabled), but
 availability/timing on this kernel has not been tested:
 https://kernelsu.org/guide/rescue-from-bootloop.html . No flash/wipe is proposed.
 
-ADB currently uses TCP: service.adb.tcp.port=5555, persist.adb.tcp.port is empty.
-Do not assume TCP survives reboot. USB ADB should be available before an approved
-reboot. No transport settings were changed in this phase.
+The user explicitly chose TCP and manual reboot/reconnection after USB ADB did
+not enumerate. Do not repeat USB troubleshooting or assume TCP survives reboot.
+Before activation, report the exact scope; after installation/activation, prompt
+the user to reboot and reconnect TCP. Never initiate an additional reboot.
 
 Vector hot reload cannot be assumed to attach an initially disabled module to
 an already running system_server. Source at installed commit ddeed8ca checks
 for an existing module generation before hot reload. No reboot/restart has yet
-been performed for this experiment.
+been performed automatically; the user performed the first approved reboot.
 
 ## Replacement gate implemented and tested
 
@@ -97,13 +128,15 @@ action bridge**; tests establish decision logic, not on-device replacement.
   warning at the exact reflected method is intentional and not suppressed.
 - Normal onSystemServerStarting disassembles to a single return in javap.
 - Normal packaging audit confirms self scope and no bundled libxposed API.
-- Both APKs pass apksigner. Neither new APK was installed in this phase.
+- Both APKs pass apksigner. The original probe was installed then rolled back;
+  the corrected probe is built locally only.
 
 | Local artifact | SHA-256 |
 |---|---|
 | artifacts/OPlusKeyControl-0.1.0-dev-debug.apk (normal rollback) | 95980ccca6834bd8103215f0b75f6543c94f1837765f3c67962ded0ccbd0cd5c |
-| artifacts/OPlusKeyControl-0.1.0-policy-probe-debug.apk (opt-in only) | fa30d472bf9d412cddb3321a2ef7146cabd29c4e4570bdac5387c96be7654aac |
+| artifacts/OPlusKeyControl-0.1.0-policy-probe-debug.apk (corrected, opt-in only) | 47d5d2df162f0d5a2fca4360a1051649aa28437513f6d1370ec7f6570da3a5de |
 
 These are ignored local artifacts. Module status remains disabled; scope is
-empty. The module baseline is saved privately for scoped rollback. No framework
-scope, activation flag, system setting or KSU module was modified in this phase.
+empty after rollback. The module baseline is saved privately for scoped rollback.
+The failed first probe's SHA-256 was
+fa30d472bf9d412cddb3321a2ef7146cabd29c4e4570bdac5387c96be7654aac.

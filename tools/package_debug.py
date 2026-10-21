@@ -4,7 +4,12 @@ import hashlib
 import json
 import shutil
 import zipfile
+import argparse
 from dex_inventory import Dex
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--policy-probe", action="store_true", help="Audit the opt-in Vector system/self observation build")
+policy_probe = parser.parse_args().policy_probe
 
 ROOT = Path(__file__).resolve().parents[1]
 APK = ROOT / "app/build/outputs/apk/debug/app-debug.apk"
@@ -12,7 +17,8 @@ DEST = ROOT / "artifacts"
 
 with zipfile.ZipFile(APK) as archive:
     required = "META-INF/xposed/"
-    assert archive.read(required + "scope.list").decode().strip() == "dev.opluskeycontrol"
+    scope = archive.read(required + "scope.list").decode().splitlines()
+    assert scope == (["system", "dev.opluskeycontrol"] if policy_probe else ["dev.opluskeycontrol"]), "Unexpected Vector scope"
     assert archive.read(required + "java_init.list").decode().strip() == "dev.opluskeycontrol.vector.VectorProbe"
     assert "targetApiVersion=101" in archive.read(required + "module.prop").decode()
     classes = []
@@ -25,7 +31,7 @@ with zipfile.ZipFile(APK) as archive:
     assert "Ldev/opluskeycontrol/vector/VectorProbe;" in classes
 
 DEST.mkdir(exist_ok=True)
-out = DEST / "OPlusKeyControl-0.1.0-dev-debug.apk"
+out = DEST / ("OPlusKeyControl-0.1.0-policy-probe-debug.apk" if policy_probe else "OPlusKeyControl-0.1.0-dev-debug.apk")
 shutil.copy2(APK, out)
 digest = hashlib.sha256(out.read_bytes()).hexdigest()
 (DEST / (out.name + ".sha256")).write_text(digest + "  " + out.name + "\n", encoding="utf-8")
@@ -37,7 +43,8 @@ for pattern in ("domain/build/test-results/test/*.xml", "app/build/test-results/
         results.append({key: suite.attrib[key] for key in ("name", "tests", "failures", "errors")})
 assert results and all(int(r["failures"]) == 0 and int(r["errors"]) == 0 for r in results)
 metadata = {"project": "OPlusKeyControl", "applicationId": "dev.opluskeycontrol", "version": "0.1.0-dev", "sha256": digest,
-            "bytes": out.stat().st_size, "unitTests": results, "xposed": "API 101 compileOnly; own-scope zero-hook probe",
+            "bytes": out.stat().st_size, "unitTests": results, "scope": scope,
+            "xposed": "API 101 compileOnly; finite pass-through policy probe" if policy_probe else "API 101 compileOnly; own-scope zero-hook probe",
             "device": "No install/runtime success implied by this packaging audit"}
-(DEST / "build-evidence.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+(DEST / ("policy-probe-build-evidence.json" if policy_probe else "build-evidence.json")).write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(metadata, indent=2))
