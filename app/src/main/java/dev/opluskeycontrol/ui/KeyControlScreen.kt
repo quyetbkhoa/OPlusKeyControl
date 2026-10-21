@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -50,6 +51,9 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     var editing by remember { mutableStateOf<Rule?>(null) }
     var editor by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
+    val overviewScroll = rememberLazyListState()
+    val mappingsScroll = rememberLazyListState()
+    val settingsScroll = rememberLazyListState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refresh++ }
@@ -75,7 +79,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
         } } },
         floatingActionButton = { if (tab == 1) ExtendedFloatingActionButton(onClick = { editing = null; editor = true }, icon = { Icon(Icons.Outlined.Add, null) }, text = { Text(stringResource(R.string.add_rule)) }) }
     ) { insets ->
-        LazyColumn(Modifier.padding(insets).fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        LazyColumn(Modifier.padding(insets).fillMaxSize(), state = when (tab) { 0 -> overviewScroll; 1 -> mappingsScroll; else -> settingsScroll }, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             item { if (recording) InfoCard(R.string.recording, R.string.recording_notice) {
                 Button(onClick = { context.startService(Intent(context, RecorderService::class.java).setAction(RecorderService.STOP)) }) { Text(stringResource(R.string.stop)) }
             } }
@@ -136,7 +140,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                 }
                 2 -> {
                     item { Text(stringResource(R.string.settings), style = MaterialTheme.typography.headlineMedium) }
-                    item { InfoCard(R.string.backend, R.string.backend_explanation) {
+                    item(key = "backend") { InfoCard(R.string.backend, R.string.backend_explanation) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Tier.entries.forEach { tier ->
                             FilterChip(selected = config.tier == tier, onClick = { app.store.disable(); app.store.mutate { it.copy(tier = tier, enabled = false) } }, label = { Text(stringResource(tier.label())) })
                         } }
@@ -144,24 +148,24 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                         Text(stringResource(if (Capabilities.shizukuGranted()) R.string.shizuku_granted else if (Capabilities.shizukuConnected()) R.string.shizuku_running else R.string.shizuku_missing))
                         OutlinedButton(onClick = { Capabilities.requestShizuku(); refresh++ }, enabled = Capabilities.shizukuConnected()) { Text(stringResource(R.string.request_shizuku)) }
                     } }
-                    item { InfoCard(R.string.permissions, R.string.permissions_description) {
+                    item(key = "permissions") { InfoCard(R.string.permissions, R.string.permissions_description) {
                         Button(onClick = onPermissions) { Text(stringResource(R.string.grant_permissions)) }
                         OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text(stringResource(R.string.enable_accessibility)) }
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + context.packageName))) }) { Text(stringResource(R.string.app_settings)) }
                     } }
-                    item { InfoCard(R.string.action_tests, R.string.tests_description) {
+                    item(key = "manual-actions") { InfoCard(R.string.action_tests, R.string.tests_description) {
                         Button(onClick = { scope.launch { app.actions.execute(Action(ActionKind.TORCH_TOGGLE), true) } }) { Text(stringResource(R.string.torch_toggle)) }
                         OutlinedButton(onClick = { scope.launch { app.actions.execute(Action(ActionKind.RECORD_TOGGLE), true) } }) { Text(stringResource(R.string.recorder_toggle)) }
                         OutlinedButton(onClick = { if (!app.actions.openStockCamera()) app.actions.message.value = R.string.camera_unavailable }) { Text(stringResource(R.string.open_camera_only)) }
                         Text(stringResource(R.string.camera_unverified))
                     } }
-                    item { RecordingHistory() }
-                    item { TimingSettings(config) { value -> app.store.mutate { it.copy(timing = value) } } }
-                    item { InfoCard(R.string.backup, R.string.backup_description) {
+                    item(key = "recording-history") { RecordingHistory() }
+                    item(key = "timing") { TimingSettings(config) { value -> app.store.mutate { it.copy(timing = value) } } }
+                    item(key = "backup") { InfoCard(R.string.backup, R.string.backup_description) {
                         OutlinedButton(onClick = onExport) { Text(stringResource(R.string.export_rules)) }
                         OutlinedButton(onClick = onImport) { Text(stringResource(R.string.import_rules)) }
                     } }
-                    item { InfoCard(R.string.diagnostics, R.string.diagnostics_description) {
+                    item(key = "diagnostics") { InfoCard(R.string.diagnostics, R.string.diagnostics_description) {
                         Text(stringResource(R.string.firmware, Build.MODEL, Build.VERSION.RELEASE, Build.VERSION.SDK_INT, Build.DISPLAY))
                         val identity = remember { mutableStateOf<String?>(null) }
                         OutlinedButton(enabled = config.tier == Tier.ROOT, onClick = { scope.launch {

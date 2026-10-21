@@ -1,5 +1,8 @@
 # Local build evidence — 2026-10-22
 
+Historical initial build. The newer installed scroll-fix artifact and physical
+test results are recorded in [DEVICE_ACTION_TESTS.md](DEVICE_ACTION_TESTS.md).
+
 JDK: Eclipse Adoptium 17.0.17.10, SDK platform 36. Clean app build:
 
 ```powershell

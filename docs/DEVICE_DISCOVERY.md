@@ -16,6 +16,7 @@ Device serial, installed personal app lists and private logs are intentionally o
 | FACT | event1 pmic_pwrkey: Power; event2 gpio-keys: VolDown; event3 pmic_resin: VolUp | getevent -pl |
 | FACT | gpio-keys.kl maps 766 to CAMERA, 115/114 to volume | cat /system/usr/keylayout/gpio-keys.kl |
 | INFERENCE | event0 may be Plus Key; Linux 735 vs keylayout 766 mismatch needs physical capture | No physical-button experiment yet; no Plus keycode is enabled in app |
+| FACT (follow-up) | event0 is physical Plus: BTN_TRIGGER_HAPPY32 DOWN/UP | User pressed once during finite getevent capture; see DEVICE_ACTION_TESTS.md; Android translation still unknown |
 | FACT | event0–3 device/power/wakeup reports enabled | sysfs read; does NOT prove delivery in deep sleep |
 | FACT | Camera com.oplus.camera v6.070.230 | dumpsys package scoped to camera |
 | FACT | Stock normal intent -> .component.CameraImageActivity; secure -> .Camera | cmd package resolve-activity with -p com.oplus.camera |

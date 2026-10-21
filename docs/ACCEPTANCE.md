@@ -3,6 +3,11 @@
 **Development checkpoint, not complete product acceptance.** A successful build,
 JVM test or bytecode inspection is not physical-device input/action evidence.
 
+Update: [DEVICE_ACTION_TESTS.md](DEVICE_ACTION_TESTS.md) supersedes the initial
+NOT_TESTED entries for manual unlocked torch, visible recorder toggle/autostop,
+stock camera open-only, self-launch, picker/wizard and persistence. Actual
+remapping/capture screen-state cells below remain NOT_TESTED.
+
 ## Phases
 
 | Phase | Status | Scope/evidence |
