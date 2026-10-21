@@ -74,6 +74,8 @@ final class PolicyInputProbe {
         if (current != null) current.unhook();
     }
     private void report(String value) {
-        try { module.log(Log.INFO, "OPlusKeyControl", value); } catch (Throwable ignored) { }
+        // Vector can mute INFO through module.log during early system-server startup.
+        // Use the Android logger for this finite diagnostic, independent of that flag.
+        try { Log.i("OPlusKeyControl", value); } catch (Throwable ignored) { }
     }
 }

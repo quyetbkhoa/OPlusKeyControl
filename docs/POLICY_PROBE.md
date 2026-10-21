@@ -62,6 +62,38 @@ passing; lint succeeds. Normal-build javap shows both onSystemServerStarting and
 attachPolicy contain only return. The next probe requires a new activation/boot
 approval; the second attempt's reboot authorization is already used.
 
+## Third attempt: full boot and diagnostic mute boundary (2026-10-22)
+
+After the user's manual resume, probe f84c173f... was installed and enabled in
+system/self scope. An initial check showed an Android process restart only
+(kernel uptime 8139.83 seconds, unchanged Vector daemon). The user then performed
+a full reboot: uptime 120.44 seconds and boot completion 1. The new system_server
+log again recorded module loading successfully, with no PROBE_STAGE/READY/BLOCKED.
+No physical Plus press was requested, and no Android keycode was established.
+Full reboot did not resolve the missing diagnostic; do not blame a stale daemon
+or claim that the observer definitely failed to attach from absence of INFO logs.
+
+Read-only analysis of the actual installed framework DEX found a logging gate:
+VectorContext (obfuscated j2) log checks x1.b and skips priorities below ERROR
+when it is true. Main.forkCommon initializes that process-local flag from the
+framework service (or a muted fallback). This explains why module.log INFO is
+not a reliable readiness channel during early boot; the actual flag value in
+this system_server has not been measured. The matching GitHub source previously
+consulted does not show the same logging gate, so binary behavior takes priority.
+
+The next local probe uses Android Log.i directly for finite probe diagnostics,
+independent of Vector's module.log mute flag, and records the module callback's
+system-server boolean/process name before choosing a branch. Stage logging is
+isolated so a logger exception cannot prevent attachment. Hook target, firmware
+guard, 16-event budget, ten-minute uptime lease and pass-through remain unchanged.
+Both builds, APK audits and signature verification pass. This change has not
+been installed as a probe or runtime tested; no further reboot was initiated.
+
+Third rollback verified: module disabled, scope empty, normal APK restored;
+non-target module statuses match the baseline. A previously loaded observer may
+remain resident until its existing bounded lease expires; disabling the module
+and replacing its APK do not prove immediate unloading. It always calls proceed.
+
 ## Verified prerequisites
 
 - Physical Plus: event0 / Linux 735 / BTN_TRIGGER_HAPPY32, user-confirmed capture.
@@ -162,8 +194,8 @@ action bridge**; tests establish decision logic, not on-device replacement.
 
 | Local artifact | SHA-256 |
 |---|---|
-| artifacts/OPlusKeyControl-0.1.0-dev-debug.apk (normal rollback) | a7318942a388375a592c7b86484b2d541443deb8fdcecd0a834e65cce96c0432 |
-| artifacts/OPlusKeyControl-0.1.0-policy-probe-debug.apk (initialization diagnostics, opt-in only) | f84c173f4754b6febcec0ce5346a452f86df3a7ab62a65fcbfc4aa65c407805b |
+| artifacts/OPlusKeyControl-0.1.0-dev-debug.apk (normal rollback) | d07dd79fc1047fde0771133a34e508f87d19f792d0586daa545279c9114cfa77 |
+| artifacts/OPlusKeyControl-0.1.0-policy-probe-debug.apk (direct Android diagnostics, opt-in only) | 0d70caa9fef646019a39e2ec45ebe4d7a88ab9ceded39923f66dc1624e50a7df |
 
 These are ignored local artifacts. Module status remains disabled; scope is
 empty after rollback. The module baseline is saved privately for scoped rollback.

@@ -14,6 +14,10 @@ public final class VectorProbe extends XposedModule {
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
+        if (BuildConfig.POLICY_PROBE) {
+            reportStage("module_loaded systemServer=" + param.isSystemServer()
+                    + " process=" + param.getProcessName());
+        }
         if (param.isSystemServer()) {
             if (BuildConfig.POLICY_PROBE) {
                 attachPolicy(Thread.currentThread().getContextClassLoader(), "module_loaded");
@@ -37,8 +41,8 @@ public final class VectorProbe extends XposedModule {
 
     private synchronized void attachPolicy(ClassLoader loader, String stage) {
         if (!BuildConfig.POLICY_PROBE || policyAttached) return;
+        reportStage(stage);
         try {
-            log(Log.INFO, "OPlusKeyControl", "PROBE_STAGE " + stage);
             // The observed module-loaded callback is also a valid attachment opportunity
             // if its context loader resolves the exact guarded IMS method. No new hook target.
             if (policyProbe == null) policyProbe = new PolicyInputProbe(this);
@@ -46,5 +50,9 @@ public final class VectorProbe extends XposedModule {
         } catch (Throwable ignored) {
             // Diagnostics and attachment must never escape into framework initialization.
         }
+    }
+
+    private void reportStage(String stage) {
+        try { Log.i("OPlusKeyControl", "PROBE_STAGE " + stage); } catch (Throwable ignored) { }
     }
 }
