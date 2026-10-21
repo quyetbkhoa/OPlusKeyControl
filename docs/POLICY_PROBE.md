@@ -31,7 +31,36 @@ Rollback verified: only OPlusKeyControl disabled, scope empty, normal APK restor
 with installed SHA-256 matching the normal artifact below. Every other Vector
 module's enabled/disabled status matches the saved baseline. No settings, key
 layouts, Power module or framework installation were changed. The corrected
-probe has not been installed/activated; another boot experiment requires consent.
+probe was then installed/activated in the separately approved second attempt below.
+
+## Second attempt and initialization diagnostics (2026-10-22)
+
+After a separate approval and manual reboot, boot completion was 1 and Vector's
+boot log confirmed VectorProbe loaded successfully in system_server (uid 1000).
+The installed APK hash matched corrected probe 47d5d2df... . Scope was confirmed
+system/self. There was still no PROBE_READY, BLOCKED, or callback exception log.
+No physical Plus press was requested; Android keycode capture remains unverified.
+This confirms module loading only, not invocation of onSystemServerStarting or
+hook attachment. The exact reason that callback produced no diagnostic is not
+established. Vector source dispatches it from StartBootstrapServicesHooker; normal
+module creation occurs via ActivityThread.attach. Do not claim a proven callback
+ordering defect without evidence.
+
+The next local probe adds PROBE_STAGE diagnostics and attempts the same guarded
+IMS hook during the observed system-server onModuleLoaded callback using the
+thread context classloader. If the classloader/signature/firmware cannot be
+resolved, attachment fails open with the exception class logged. The original
+system-server-starting callback can retry. Synchronization and a success latch
+prevent duplicate hook attachment; both attempts share one finite observer
+budget. No extra hook target, action dispatch, wake lock or background thread was
+added. This initialization change is built and audited locally, not runtime tested.
+
+Second rollback is complete: module disabled, scope empty, latest normal APK
+installed with matching hash below, all non-target Vector module statuses equal
+to the baseline. Both builds and signature audits pass. JVM tests remain 76
+passing; lint succeeds. Normal-build javap shows both onSystemServerStarting and
+attachPolicy contain only return. The next probe requires a new activation/boot
+approval; the second attempt's reboot authorization is already used.
 
 ## Verified prerequisites
 
@@ -61,7 +90,7 @@ preserves rules/grants. Neither APK automatically enables Vector or remapping.
 
 ## What the probe does
 
-At system-server initialization it checks exact model/build/API and the exact
+At system-server module loading (and, if needed, its starting callback), it checks exact model/build/API and the exact
 reflected signature before attaching one protective interceptor. Every invocation
 calls `chain.proceed()` exactly once, returning the original result/exception.
 Only scanCode 735 is logged; Power is explicitly excluded. It never changes
@@ -133,8 +162,8 @@ action bridge**; tests establish decision logic, not on-device replacement.
 
 | Local artifact | SHA-256 |
 |---|---|
-| artifacts/OPlusKeyControl-0.1.0-dev-debug.apk (normal rollback) | 95980ccca6834bd8103215f0b75f6543c94f1837765f3c67962ded0ccbd0cd5c |
-| artifacts/OPlusKeyControl-0.1.0-policy-probe-debug.apk (corrected, opt-in only) | 47d5d2df162f0d5a2fca4360a1051649aa28437513f6d1370ec7f6570da3a5de |
+| artifacts/OPlusKeyControl-0.1.0-dev-debug.apk (normal rollback) | a7318942a388375a592c7b86484b2d541443deb8fdcecd0a834e65cce96c0432 |
+| artifacts/OPlusKeyControl-0.1.0-policy-probe-debug.apk (initialization diagnostics, opt-in only) | f84c173f4754b6febcec0ce5346a452f86df3a7ab62a65fcbfc4aa65c407805b |
 
 These are ignored local artifacts. Module status remains disabled; scope is
 empty after rollback. The module baseline is saved privately for scoped rollback.

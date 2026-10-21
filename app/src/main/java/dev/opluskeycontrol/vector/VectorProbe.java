@@ -9,9 +9,18 @@ import io.github.libxposed.api.XposedModule;
  * Reading LIB_API would merely report a compile-time constant; use getApiVersion.
  */
 public final class VectorProbe extends XposedModule {
+    private PolicyInputProbe policyProbe;
+    private boolean policyAttached;
+
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
-        if (param.isSystemServer() || !"dev.opluskeycontrol".equals(param.getProcessName())) return;
+        if (param.isSystemServer()) {
+            if (BuildConfig.POLICY_PROBE) {
+                attachPolicy(Thread.currentThread().getContextClassLoader(), "module_loaded");
+            }
+            return;
+        }
+        if (!"dev.opluskeycontrol".equals(param.getProcessName())) return;
         try {
             log(Log.INFO, "OPlusKeyControl", "Probe only; no hooks. Runtime API=" + getApiVersion()
                     + ", framework=" + getFrameworkName() + ", version=" + getFrameworkVersionCode());
@@ -23,7 +32,19 @@ public final class VectorProbe extends XposedModule {
     @Override
     public void onSystemServerStarting(SystemServerStartingParam param) {
         if (!BuildConfig.POLICY_PROBE) return;
-        // Probe implementation does not consume, rewrite or inject any event.
-        new PolicyInputProbe(this).install(param.getClassLoader());
+        attachPolicy(param.getClassLoader(), "system_server_starting");
+    }
+
+    private synchronized void attachPolicy(ClassLoader loader, String stage) {
+        if (!BuildConfig.POLICY_PROBE || policyAttached) return;
+        try {
+            log(Log.INFO, "OPlusKeyControl", "PROBE_STAGE " + stage);
+            // The observed module-loaded callback is also a valid attachment opportunity
+            // if its context loader resolves the exact guarded IMS method. No new hook target.
+            if (policyProbe == null) policyProbe = new PolicyInputProbe(this);
+            policyAttached = policyProbe.install(loader);
+        } catch (Throwable ignored) {
+            // Diagnostics and attachment must never escape into framework initialization.
+        }
     }
 }

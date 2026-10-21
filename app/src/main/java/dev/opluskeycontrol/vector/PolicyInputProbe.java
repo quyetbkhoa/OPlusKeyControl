@@ -22,17 +22,17 @@ final class PolicyInputProbe {
 
     PolicyInputProbe(XposedModule module) { this.module = module; }
 
-    void install(ClassLoader loader) {
+    boolean install(ClassLoader loader) {
         if (Build.VERSION.SDK_INT != 36 || !"CPH2745".equals(Build.MODEL) || !BUILD.equals(Build.DISPLAY)) {
             report("BLOCKED: firmware does not match observed profile");
-            return;
+            return false;
         }
         try {
             Class<?> ims = loader.loadClass("com.android.server.input.InputManagerService");
             Method method = ims.getDeclaredMethod("interceptKeyBeforeQueueing", KeyEvent.class, int.class);
             if (method.getReturnType() != int.class) {
                 report("BLOCKED: method signature mismatch");
-                return;
+                return false;
             }
             expiresAt = SystemClock.uptimeMillis() + 600_000L;
             handle = module.hook(method).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
@@ -60,8 +60,11 @@ final class PolicyInputProbe {
                 return chain.proceed();
             });
             report("PROBE_READY: read-only Plus, 16 events / 10 minutes, no suppression");
-        } catch (Throwable ignored) {
-            report("BLOCKED: probe attachment failed; input untouched");
+            return true;
+        } catch (Throwable failure) {
+            report("BLOCKED: probe attachment failed (" + failure.getClass().getSimpleName()
+                + "); input untouched");
+            return false;
         }
     }
 
