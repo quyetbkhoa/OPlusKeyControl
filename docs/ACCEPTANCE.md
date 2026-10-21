@@ -73,6 +73,9 @@ with no accessibility/Vector activation, permission grants, remapping, recording
 photos or reboot. Before installation, `adb devices -l` returned an empty list.
 The install has **not** been attempted against an unknown/missing target.
 User has been asked to reconnect USB; permission remains valid when it returns.
+Update: user reconnected over TCP and requested installation. Install, cold start
+and initial Vietnamese dark Overview rendering now PASS; see
+[DEVICE_UI_CHECK.md](DEVICE_UI_CHECK.md). Other UI flows remain NOT_TESTED.
 
 Emulator attempts: existing API 36 AVD booted but ADB remained unauthorized. A
 separate temporary AVD could not start because the google_apis image contained

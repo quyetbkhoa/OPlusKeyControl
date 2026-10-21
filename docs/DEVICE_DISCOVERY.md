@@ -65,7 +65,8 @@ Experimental adapters must fail open; no input grabbing/reinjection is shipped.
 User approved installing the debug APK and opening/testing UI only. No runtime
 permission grant, Accessibility/Vector activation, remapping, recording, photo,
 reboot or uninstall was authorized in this approval. ADB subsequently reported no
-connected devices; awaiting USB reconnection before using that approval.
+connected devices. Update: user reconnected over TCP, installation and initial
+Overview rendering passed; see DEVICE_UI_CHECK.md. No expanded permission scope.
 Future action tests require their own scope. Disable from UI/tile before an
 approved uninstall; verify volume pass-through and removal. Camera capture,
 recording, internal-activity launch and every reboot need their own concrete scope.

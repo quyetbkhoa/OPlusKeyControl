@@ -42,4 +42,6 @@ Audited deliverable: `artifacts/OPlusKeyControl-0.1.0-dev-debug.apk`
 APK/hash/JSON evidence are ignored local artifacts, not committed release files.
 CI is prepared but has not run on GitHub. No remote push, tag, release or merge
 to main was performed. Device installation/UI testing is pending USB reconnection;
-no camera/recording/physical-input result is claimed.
+no camera/recording/physical-input result is claimed. Update: after the user
+reconnected over TCP, installation and initial Overview rendering passed; see
+[DEVICE_UI_CHECK.md](DEVICE_UI_CHECK.md). The build evidence above is unchanged.
