@@ -4,6 +4,41 @@ This is **not a working remapper**. The normal APK does not register the input
 probe. A separate opt-in build is needed. The first approved on-device attempt
 did not load the policy probe; rollback is complete and the module is disabled.
 
+## Current result: physical Plus reaches IMS (2026-10-22)
+
+The separately approved direct-log probe (0d70caa9...) was installed with
+system/self scope and loaded after a full manual reboot. Boot completion was 1,
+uptime 95.23 seconds, and Vector recorded the module in system_server.
+PROBE_READY was no longer present when ADB reconnected. Read-only inspection
+showed main/system logcat buffers were only 256 KiB; their oldest retained records
+were already later than module initialization. Vector's persistent module logs
+did not retain the custom OPlusKeyControl tag. Absence of startup diagnostics
+therefore cannot be used to infer a failed attachment.
+
+A finite, filtered live logcat capture was started. The user confirmed pressing
+Plus during capture. system_server recorded:
+
+```text
+PLUS_OBSERVATION keyCode=780 scanCode=735 edge=0 repeat=0
+PLUS_OBSERVATION keyCode=780 scanCode=735 edge=1 repeat=0
+```
+
+The capture contains four DOWN/UP pairs (eight lines), all with those identities
+and repeat=0. This proves the physical Plus input reaches the exact guarded
+InputManagerService.interceptKeyBeforeQueueing(KeyEvent,int) observer. It does
+not prove one pair per physical press: the count of user presses was not measured
+independently, so duplicate-delivery/deduplication remains untested. No input was
+injected, consumed, rewritten or used to dispatch an action. Lock/screen-off/deep
+sleep delivery, gesture timing, OEM action suppression and remapping are untested.
+
+Rollback completed and verified after capture: only dev.opluskeycontrol disabled,
+scope empty, normal APK restored with installed SHA-256 matching d07dd79f... below;
+all other Vector module statuses equal their saved baseline. No second reboot was
+initiated. A resident observer may remain until its finite event/time bound;
+disable/update does not prove immediate unhooking. It always passes input through.
+The next work is the runtime action bridge and safe ownership/suppression design;
+this result alone must not enable remapping capabilities in the UI.
+
 ## Device attempt and corrected scope (2026-10-22)
 
 The user approved installation/activation and one reboot, then rebooted manually
@@ -189,8 +224,8 @@ action bridge**; tests establish decision logic, not on-device replacement.
   warning at the exact reflected method is intentional and not suppressed.
 - Normal onSystemServerStarting disassembles to a single return in javap.
 - Normal packaging audit confirms self scope and no bundled libxposed API.
-- Both APKs pass apksigner. The original probe was installed then rolled back;
-  the corrected probe is built locally only.
+- Both APKs pass apksigner. The direct-log probe was installed and observed Plus
+  on-device, then rolled back. This is capture evidence only, not remapping.
 
 | Local artifact | SHA-256 |
 |---|---|

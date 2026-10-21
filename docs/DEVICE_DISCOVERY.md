@@ -1,8 +1,23 @@
 # Device discovery — 2026-10-22
 
-Read-only ADB inspection. No APK installation, settings write, module change,
+Initial read-only ADB inspection. The original reconnaissance below predates the
+separately approved action and probe tests; see the current follow-up first.
+During the initial inspection, no APK installation, settings write, module change,
 input injection, process restart, EVIOCGRAB or reboot was performed.
 Device serial, installed personal app lists and private logs are intentionally omitted.
+
+## Current probe follow-up
+
+User-confirmed physical Plus input was captured by the approved read-only IMS
+probe: **Android keyCode 780 / scanCode 735**, DOWN and UP, repeat=0. Four pairs
+were captured; one-to-one physical press accounting has not been established.
+This validates input observation in system_server on the exact firmware below,
+not replacement of OEM actions or capture while locked/asleep. The probe was
+then disabled, its scope cleared and the normal APK restored; all other Vector
+module statuses match the saved baseline. API 101.0.1 code executed under runtime
+Vector API 102. Full experiment and limitations: [POLICY_PROBE.md](POLICY_PROBE.md).
+
+## Original reconnaissance
 
 | Classification | Finding | Evidence |
 |---|---|---|
