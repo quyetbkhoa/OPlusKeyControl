@@ -80,8 +80,21 @@ class ScreenInspector(private val service: AccessibilityService) {
             fun row() = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL; root.addView(this) }
             fun button(row: LinearLayout, label: Int, action: () -> Unit): android.widget.Button = android.widget.Button(service).apply {
                 setText(label); textSize = 12f; isAllCaps = false; minHeight = dp(48); minimumWidth = 0
-                setTextColor(Color.WHITE); setOnClickListener { action() }
-                row.addView(this, LinearLayout.LayoutParams(0, dp(48), 1f))
+                backgroundTintList = null
+                fun surface(fill: Int, border: Int) = GradientDrawable().apply {
+                    setColor(fill); cornerRadius = dp(10).toFloat(); setStroke(dp(1), border)
+                }
+                background = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(-android.R.attr.state_enabled), surface(Color.rgb(30, 37, 40), Color.rgb(49, 60, 64)))
+                    addState(intArrayOf(android.R.attr.state_pressed), surface(Color.rgb(33, 103, 79), Color.rgb(66, 230, 163)))
+                    addState(intArrayOf(), surface(Color.rgb(24, 62, 49), Color.rgb(45, 143, 105)))
+                }
+                setTextColor(android.content.res.ColorStateList(
+                    arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+                    intArrayOf(Color.rgb(143, 157, 163), Color.rgb(231, 255, 244))))
+                setPadding(dp(4), 0, dp(4), 0); setOnClickListener { action() }
+                row.setPadding(0, dp(4), 0, dp(4))
+                row.addView(this, LinearLayout.LayoutParams(0, dp(48), 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
             }
             val first = row()
             button(first, R.string.inspector_refresh) { request(manual = true) }

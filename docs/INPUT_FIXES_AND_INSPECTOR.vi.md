@@ -53,9 +53,28 @@ Power/Volume cả hai thứ tự, khoảng 150 ms, callback sai/giả/cũ/trùng
 queue đầy, mật khẩu và phân biệt Activity foreground với task cũ.
 
 APK: artifacts/OPlusKeyControl-power-combos-debug.apk
-SHA-256: 1d85978ac33401e1d42a0dcd68ed7189dbfb5ad72457a1ed8979c5bc6511ba11
+SHA-256: 72f4a8454725f61a45bff321447aba181d1b18b413d24a12ceb6fda625518ff5
 
 Bản trước thay đổi: artifacts/OPlusKeyControl-power-combos-before-inspector-debug.apk.
 Rollback UI/Plus ổn định: artifacts/OPlusKeyControl-dark-ui-debug.apk.
 Cài APK không đủ chứng minh nút thật hoặc overlay hoạt động. Kết quả trên thiết
 bị sẽ được ghi riêng sau khi được phép kích hoạt hook mới.
+
+## Kết quả cài thiết bị
+
+Đã được người dùng cho phép cài, kích hoạt hook mới, soft reboot và kiểm tra
+Trợ năng. APK đầu tiên đã cài, cấu hình giữ nguyên, system_server đổi PID và
+kernel boot ID giữ nguyên. TCP vẫn ở cổng 5555. UI Chẩn đoán báo features: 15,
+nghĩa là Plus, Power double, Plus partner và native Power/Volume đã đăng ký.
+Đây chưa phải nghiệm thu hành động bằng phím thật của các tổ hợp mới.
+
+Người dùng tự bật Trợ năng. Đã thấy overlay trên launcher và Cài đặt. Người dùng
+sau đó yêu cầu dừng test thêm tính năng này và chỉ sửa nút; chưa xác nhận lưu
+TXT trên thiết bị. Không tạo file TXT thử hoặc bắt người dùng thử tiếp.
+Nút overlay đã đổi từ nền xám/chữ trắng của theme hệ thống sang nền xanh tối,
+viền xanh, chữ sáng, có pressed/disabled state và khoảng cách giữa các nút.
+
+Bản sửa nút đã build/test/lint thành công, cài đè và soft reboot. Hash APK trên
+máy khớp bản cuối ở trên; cấu hình tiếp tục giống từng byte. TCP kết nối lại.
+Hook/action executor không thay đổi trong lượt sửa màu nút. Không thử SOS,
+không ghi âm/chụp ảnh, không sửa rule hoặc module PowerKey bên ngoài.
