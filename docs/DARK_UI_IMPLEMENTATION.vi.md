@@ -35,5 +35,20 @@ Build runtime và bộ 110 JVM test đạt; lint không lỗi (còn cảnh báo,
 Đây là bằng chứng build/test; chưa thay thế kiểm tra bố cục và thao tác trên máy.
 Lượt này chỉ dựng code và APK, không cài đè hoặc reboot điện thoại.
 
+## Cài đặt theo yêu cầu tiếp theo — 22/10/2026
+
+Đã cài APK dark UI qua USB bằng `adb install -r`, hash APK trên máy khớp
+`db3786a9b98703f37ba99daa77e4d9e2bc4f7aca37b9d75641880a467fb24530`.
+Cấu hình trước/sau cài và sau soft reboot giống từng byte.
+
+Đã đọc service `zygote` thực tế từ init rc, rồi thực hiện soft reboot được người
+dùng cho phép bằng `setprop ctl.restart zygote`. `system_server` thay PID; kernel
+boot ID giữ nguyên. ADB USB trở lại, Android báo boot hoàn tất; app mở được và
+BackendKeeperService được bind bởi android/UID 1000. UI hiển thị Plus sẵn sàng.
+
+Đã xem screenshot giao diện dark trên điện thoại. Khi kiểm tra tiếp, UI chuyển
+sang editor do tương tác đồng thời; dừng điều khiển UI, không tự hủy draft hoặc
+lưu rule. Không thử phím Plus/Power, ghi âm, chụp ảnh hoặc bật đèn pin trong lượt cài.
+
 Tham chiếu ảnh và những chỗ phải sửa nội dung: `design/README.md`. Ảnh light mode
 không nằm trong bộ tham chiếu được đưa vào repo sau khi người dùng đổi phạm vi.
