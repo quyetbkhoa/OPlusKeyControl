@@ -2,6 +2,14 @@
 
 ## Latest fix: SELinux-denied socket replaced with Binder
 
+Post-reboot check at 07:01: a fresh root BACKEND_READY broadcast recovered the
+initially disconnected session. Live system_server log showed
+RUNTIME_BINDER_CONNECTED; dumpsys confirmed a private service binding from UID
+1000, and app UI reported connected. Binder connection is confirmed after that
+readiness request; automatic boot connection reliability and physical remapping
+are still unverified. Active DOUBLE rule was outside its 22:00–06:00 schedule,
+so full Plus coverage was absent. No rules or actions were changed/tested.
+
 On 2026-10-22 live inspection confirmed the policy worker and BACKEND_READY receiver
 in system_server. An explicit ready broadcast produced `avc: denied { connectto }`
 from `u:r:system_server:s0` to the app's `u:r:untrusted_app:s0` Unix socket.

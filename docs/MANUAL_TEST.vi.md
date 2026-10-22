@@ -1,5 +1,20 @@
 # Tự kiểm tra OPlusKeyControl — 2026-10-22
 
+## Kiểm tra sau reboot bản Binder — 07:01
+
+TCP kết nối. Ban đầu UI chưa kết nối; gửi lại BACKEND_READY bằng ADB root
+(không sửa cấu hình) đã tạo `RUNTIME_BINDER_CONNECTED` từ system_server PID 4442
+lúc 07:01:07. Service Binder được bind bởi android/UID 1000 và UI chuyển sang
+“Backend Plus đã kết nối”. Kết nối Binder PASS sau yêu cầu sẵn sàng lại;
+kết nối tự động ngay sau boot chưa được xác nhận ổn định.
+
+Công tắc chính và cả ba rule hiện ON. Rule DOUBLE vẫn chỉ 22:00–06:00,
+ngoài lịch tại thời điểm kiểm tra 07:01 nên toàn bộ Plus pass-through theo thiết kế.
+Chưa thử nhấn Plus/chạy action sau kết nối; chưa nghiệm thu remap. Không sửa rule,
+không bật đèn pin hoặc ghi âm trong lượt kiểm tra này. Để thử thủ công ban ngày,
+người dùng cần đặt DOUBLE mọi lúc hoặc thêm lịch phù hợp; nên dùng ba action
+đèn pin cho thử nghiệm ban đầu, tránh vô tình kích hoạt ghi âm khi giữ lâu.
+
 ## Sửa nguyên nhân backend không kết nối: Binder
 
 Đã xác nhận hook chạy và receiver BACKEND_READY tồn tại trong system_server.
