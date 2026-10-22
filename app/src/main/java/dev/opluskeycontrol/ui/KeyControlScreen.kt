@@ -46,6 +46,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     val emergency by app.store.emergency.collectAsStateWithLifecycle()
     val connected by BasicInputService.connected.collectAsStateWithLifecycle()
     val rootConnected by dev.opluskeycontrol.input.PolicyBridge.connected.collectAsStateWithLifecycle()
+    val backendFeatures by dev.opluskeycontrol.input.PolicyBridge.features.collectAsStateWithLifecycle()
     val rootState by app.bridge.authorizationState.collectAsStateWithLifecycle()
     val permissionRevision by app.permissionRevision.collectAsStateWithLifecycle()
     val events by BasicInputService.events.collectAsStateWithLifecycle()
@@ -169,7 +170,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                         val plusActive = config.enabled && !emergency && config.tier == Tier.ROOT && rootConnected && config.rules.any { it.enabled && it.trigger.button == Button.PLUS && it.schedule?.matches(now) != false && Capabilities.action(context, it.action).status == Support.SUPPORTED }
                         OpCard {
                             if (rule != null) {
-                                val status = ruleStatus(rule, config, rootConnected, emergency, now, context)
+                                val status = ruleStatus(rule, config, rootConnected, emergency, now, context, backendFeatures)
                                 OpRow(stringResource(rule.action.kind.label()), stringResource(gesture.label()), rule.action.kind.glyph(), rule.action.kind.tint())
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusChip(stringResource(status.first), status.second) }
                                 if (rule.schedule != null) ScheduleText(rule.schedule)
@@ -195,7 +196,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                     listOf(groups.first to R.string.ui_enabled_rules, groups.second to R.string.ui_draft_rules).forEach { (rules, title) ->
                         if (rules.isNotEmpty()) item { SectionTitle(stringResource(title, rules.size)) }
                         items(rules, key = { it.id }) { rule ->
-                            val status = ruleStatus(rule, config, rootConnected, emergency, now, context)
+                            val status = ruleStatus(rule, config, rootConnected, emergency, now, context, backendFeatures)
                             var menu by remember { mutableStateOf(false) }
                             val canEnable = (Capabilities.configurableTrigger(config.tier, rule.trigger) || Capabilities.trigger(context, config.tier, rule.trigger).status == Support.SUPPORTED) && Capabilities.action(context, rule.action).status == Support.SUPPORTED
                             OpCard {
@@ -312,9 +313,10 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     }
 }
 
-private fun ruleStatus(rule: Rule, config: Configuration, connected: Boolean, emergency: Boolean, now: ZonedDateTime, context: android.content.Context): Pair<Int, androidx.compose.ui.graphics.Color> = when {
+private fun ruleStatus(rule: Rule, config: Configuration, connected: Boolean, emergency: Boolean, now: ZonedDateTime, context: android.content.Context, features: Int): Pair<Int, androidx.compose.ui.graphics.Color> = when {
     !Capabilities.configurableTrigger(config.tier, rule.trigger) -> R.string.ui_unsupported to OpColors.Red
     !rule.enabled -> R.string.disabled to OpColors.Muted
+    connected && features and Capabilities.featureFor(rule.trigger) == 0 -> R.string.advanced_backend_missing to OpColors.Amber
     Capabilities.action(context,rule.action).status == Support.PERMISSION -> R.string.ui_needs_permission to OpColors.Amber
     Capabilities.action(context,rule.action).status != Support.SUPPORTED -> R.string.ui_needs_test to OpColors.Amber
     rule.action.kind == ActionKind.APP && context.packageManager.getLaunchIntentForPackage(rule.action.packageName.orEmpty()) == null -> R.string.app_unavailable to OpColors.Red

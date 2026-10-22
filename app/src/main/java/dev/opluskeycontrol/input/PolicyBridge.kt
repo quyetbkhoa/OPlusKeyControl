@@ -22,7 +22,10 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Private Binder channel: UID checks on every call, death revokes authority. */
 class PolicyBridge(private val app: KeyControlApp) {
-    companion object { val connected = MutableStateFlow(false) }
+    companion object {
+        val connected = MutableStateFlow(false)
+        val features = MutableStateFlow(0)
+    }
     private val authorization = VectorAuthorization(app.scope, app.applicationInfo.sourceDir)
     val authorizationState = authorization.state.asStateFlow()
     private val generation = AtomicLong()
@@ -41,7 +44,8 @@ class PolicyBridge(private val app: KeyControlApp) {
                 when (code) {
                     PolicyBinder.HELLO -> {
                         val callback = requireNotNull(data.readStrongBinder())
-                        require(data.dataAvail() == 0)
+                        val supported = data.readInt()
+                        require(data.dataAvail() == 0 && supported and PolicyBinder.ALL_FEATURES == supported)
                         app.scope.launch(Dispatchers.IO) {
                             synchronized(lock) {
                                 if (!available || !authorization.allowed.value || app.store.emergency.value) {
@@ -54,11 +58,18 @@ class PolicyBridge(private val app: KeyControlApp) {
                                 val recipient = IBinder.DeathRecipient { synchronized(lock) { if (peer === callback) closePeer(false) } }
                                 try {
                                     callback.linkToDeath(recipient, 0)
-                                    peer = callback; death = recipient; connected.value = true
+                                    peer = callback; death = recipient; features.value = supported; connected.value = true
                                     publish()
                                 } catch (_: Exception) { closePeer(false) }
                             }
                         }
+                    }
+                    PolicyBinder.FEATURES -> {
+                        val callback = data.readStrongBinder(); val supported = data.readInt()
+                        require(data.dataAvail() == 0 && supported and PolicyBinder.ALL_FEATURES == supported)
+                        app.scope.launch { synchronized(lock) {
+                            if (peer === callback && authorization.allowed.value && !app.store.emergency.value) features.value = supported
+                        } }
                     }
                     PolicyBinder.ACTION -> {
                         val callback = data.readStrongBinder()
@@ -169,7 +180,7 @@ class PolicyBridge(private val app: KeyControlApp) {
     fun disconnect() { synchronized(lock) { closePeer() } }
     private fun closePeer(notify: Boolean = true) {
         val old = peer; val recipient = death
-        peer = null; death = null; generation.incrementAndGet(); connected.value = false
+        peer = null; death = null; generation.incrementAndGet(); connected.value = false; features.value = 0
         if (old != null) {
             if (recipient != null) runCatching { old.unlinkToDeath(recipient, 0) }
             if (notify) runCatching { PolicyBinder.send(old, PolicyBinder.DISCONNECT) { it.writeInt(0) } }

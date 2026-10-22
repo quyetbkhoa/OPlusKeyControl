@@ -37,11 +37,16 @@ class RecorderService : Service() {
             return START_NOT_STICKY
         }
         if (worker != null) return START_NOT_STICKY
+        val requestedOrigin = intent?.getStringExtra("originGesture")?.let { gesture -> runCatching {
+            dev.opluskeycontrol.domain.Trigger(
+                dev.opluskeycontrol.domain.Button.valueOf(intent.getStringExtra("originButton") ?: "PLUS"),
+                dev.opluskeycontrol.domain.Gesture.valueOf(gesture),
+                intent.getStringExtra("originPartner")?.let(dev.opluskeycontrol.domain.Button::valueOf))
+        }.getOrNull() }
         if (intent?.hasExtra("originGesture") == true) {
             val app = application as dev.opluskeycontrol.KeyControlApp
             val c = app.store.config.value
-            val trigger = runCatching { dev.opluskeycontrol.domain.Trigger(dev.opluskeycontrol.domain.Button.PLUS,
-                dev.opluskeycontrol.domain.Gesture.valueOf(requireNotNull(intent.getStringExtra("originGesture")))) }.getOrNull()
+            val trigger = requestedOrigin
             val rule = trigger?.let { dev.opluskeycontrol.domain.RuleResolver.resolve(c.rules, it, java.time.ZonedDateTime.now()) }
             if (!c.enabled || c.tier != dev.opluskeycontrol.domain.Tier.ROOT || app.store.emergency.value ||
                 rule !is dev.opluskeycontrol.domain.Resolution.Match || rule.rule.action.kind != dev.opluskeycontrol.domain.ActionKind.RECORD_TOGGLE ||
@@ -59,9 +64,7 @@ class RecorderService : Service() {
                 .setContentIntent(open).setOngoing(true).addAction(android.R.drawable.ic_media_pause, getString(R.string.stop), stop).build()
             if (Build.VERSION.SDK_INT >= 30) startForeground(20, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             else startForeground(20, notification)
-            origin.value = intent?.getStringExtra("originGesture")?.let { name -> runCatching {
-                dev.opluskeycontrol.domain.Trigger(dev.opluskeycontrol.domain.Button.PLUS, dev.opluskeycontrol.domain.Gesture.valueOf(name))
-            }.getOrNull() }
+            origin.value = requestedOrigin
             recording.value = true
             handler.postDelayed(autoStop, intent?.getIntExtra("seconds", 300)?.coerceIn(10, 7200)?.times(1000L) ?: 300000L)
             worker = Thread({ captureMp3() }, "OPlusKeyControl-MP3").also { it.start() }

@@ -35,6 +35,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
     val actionMessage by app.actions.message.collectAsState()
     val permissionRevision by app.permissionRevision.collectAsState()
     val backendConnected by dev.opluskeycontrol.input.PolicyBridge.connected.collectAsState()
+    val backendFeatures by dev.opluskeycontrol.input.PolicyBridge.features.collectAsState()
     var confirmTest by remember { mutableStateOf(false) }
     var validationRevision by remember { mutableIntStateOf(0) }
     var step by remember { mutableIntStateOf(0) }
@@ -64,7 +65,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
     val action = runCatching { Action(kind, if (kind in setOf(ActionKind.APP, ActionKind.ACTIVITY)) target?.packageName else null, if (kind == ActionKind.ACTIVITY) activity else null, duration.toInt()) }.getOrNull()
     val rule = if (trigger != null && action != null && (!scheduled || schedule != null)) Rule(id, trigger, action, schedule, priority.toInt(), enabled) else null
     val conflict = rule != null && RuleResolver.conflicts(rule, config.rules)
-    val triggerCapability = remember(trigger, config.tier, backendConnected) { trigger?.let { Capabilities.trigger(context, config.tier, it) } }
+    val triggerCapability = remember(trigger, config.tier, backendConnected, backendFeatures) { trigger?.let { Capabilities.trigger(context, config.tier, it) } }
     val actionCapability = remember(action, validationRevision, actionMessage, permissionRevision, config.tier) { action?.let { Capabilities.action(context, it) } }
     val canEnable = (triggerCapability?.status == Support.SUPPORTED || trigger?.let { Capabilities.configurableTrigger(config.tier, it) } == true) && actionCapability?.status == Support.SUPPORTED
     if (confirmTest && action != null) AlertDialog(onDismissRequest = { confirmTest = false },
@@ -104,7 +105,8 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                                     if (button == candidate) Icon(Icons.Outlined.CheckCircle, null, tint = OpColors.Mint)
                                 }
                                 Text(stringResource(candidate.label()), style = MaterialTheme.typography.titleMedium)
-                                Text(stringResource(if(candidate == Button.PLUS && config.tier == Tier.ROOT) R.string.ui_ready else R.string.ui_unsupported), color = if(candidate == Button.PLUS && config.tier == Tier.ROOT) OpColors.Mint else OpColors.Muted, style = MaterialTheme.typography.bodySmall)
+                                val configurable = Capabilities.configurableTrigger(config.tier, Trigger(candidate, if(candidate == Button.POWER) Gesture.DOUBLE else Gesture.SINGLE))
+                                Text(stringResource(if(configurable) R.string.ui_configurable else R.string.ui_unsupported), color = if(configurable) OpColors.Mint else OpColors.Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         } }
                     }
@@ -121,6 +123,8 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                         } }
                     }
                     if (button == Button.POWER) Notice(stringResource(R.string.power_safety))
+                    if (button == Button.POWER && dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) Notice(stringResource(R.string.power_double_experimental))
+                    if (gesture == Gesture.CHORD) Notice(stringResource(R.string.chord_plus_first))
                     if (trigger == null) Notice(stringResource(R.string.reserved_chord))
                     if (triggerCapability?.status != Support.SUPPORTED) triggerCapability?.let { Notice(stringResource(it.reason)) }
                     if (button == Button.PLUS) InfoCard(R.string.ui_plus_help, R.string.root_full_coverage)

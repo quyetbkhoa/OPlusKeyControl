@@ -12,7 +12,11 @@ Không bật tự động. Xem [hướng dẫn tự test](docs/MANUAL_TEST.vi.md
 
 ## Đã triển khai
 
-- Compose Material 3, sáng/tối/dynamic color, tiếng Việt mặc định và tiếng Anh.
+- Giao diện dark Compose Material 3, tiếng Việt mặc định và tiếng Anh.
+- [Candidate Power nhấn đúp và Plus + Volume±](docs/ADVANCED_INPUTS.vi.md):
+  opt-in riêng, đã cài và soft reboot, backend kết nối; chờ kiểm tra nút thật.
+  Tài liệu liên kết mô tả giới hạn, build flags và khôi phục. Các mục lịch sử
+  runtime bên dưới mô tả bản Plus trước candidate này.
 - Wizard nút/gesture/lịch/action; không nhập package/class/intent/shell.
 - Lõi Kotlin độc lập: single/double/long, tổ hợp giữ nút và gần đồng thời,
   debounce, repeat/cancel, ownership; đã nối vào candidate Plus runtime riêng.

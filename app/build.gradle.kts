@@ -5,6 +5,8 @@ plugins {
 // Deliberate local opt-in build only. Normal APKs retain self scope and no policy hooks.
 val policyProbe = providers.gradleProperty("opcPolicyProbe").orNull == "true"
 val policyRuntime = providers.gradleProperty("opcRuntime").orNull == "true"
+val advancedInputs = providers.gradleProperty("opcAdvancedInputs").orNull == "true"
+require(!advancedInputs || policyRuntime) { "Advanced inputs require the runtime build" }
 require(!(policyProbe && policyRuntime)) { "Probe and runtime are separate experiments" }
 android {
     namespace = "dev.opluskeycontrol"
@@ -17,6 +19,7 @@ android {
         versionName = "0.1.0-dev"
         buildConfigField("boolean", "POLICY_PROBE", policyProbe.toString())
         buildConfigField("boolean", "POLICY_RUNTIME", policyRuntime.toString())
+        buildConfigField("boolean", "ADVANCED_INPUTS", advancedInputs.toString())
         resValue("bool", "runtime_backend", policyRuntime.toString())
     }
     buildFeatures { compose = true; buildConfig = true; resValues = true }

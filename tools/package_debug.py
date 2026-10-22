@@ -11,7 +11,10 @@ parser = argparse.ArgumentParser(description=__doc__)
 mode = parser.add_mutually_exclusive_group()
 mode.add_argument("--policy-probe", action="store_true", help="Audit the opt-in Vector system/self observation build")
 mode.add_argument("--runtime", action="store_true", help="Audit the opt-in experimental remapping build")
+parser.add_argument("--advanced-inputs", action="store_true", help="Audit Power double / Plus-Volume candidate; requires --runtime")
 args = parser.parse_args()
+assert not args.advanced_inputs or args.runtime
+assert ("ADVANCED_INPUTS = true" in (Path(__file__).resolve().parents[1] / "app/build/generated/source/buildConfig/debug/dev/opluskeycontrol/BuildConfig.java").read_text()) == args.advanced_inputs
 policy_probe, runtime = args.policy_probe, args.runtime
 experimental = policy_probe or runtime
 
@@ -47,7 +50,7 @@ with zipfile.ZipFile(APK) as archive:
         assert (not inert) == enabled, f"Wrong compiled build flag: {method}"
 
 DEST.mkdir(exist_ok=True)
-out = DEST / ("OPlusKeyControl-0.1.0-runtime-debug.apk" if runtime else "OPlusKeyControl-0.1.0-policy-probe-debug.apk" if policy_probe else "OPlusKeyControl-0.1.0-dev-debug.apk")
+out = DEST / ("OPlusKeyControl-power-combos-debug.apk" if args.advanced_inputs else "OPlusKeyControl-0.1.0-runtime-debug.apk" if runtime else "OPlusKeyControl-0.1.0-policy-probe-debug.apk" if policy_probe else "OPlusKeyControl-0.1.0-dev-debug.apk")
 shutil.copy2(APK, out)
 digest = hashlib.sha256(out.read_bytes()).hexdigest()
 (DEST / (out.name + ".sha256")).write_text(digest + "  " + out.name + "\n", encoding="utf-8")
@@ -58,9 +61,9 @@ for pattern in ("domain/build/test-results/test/*.xml", "app/build/test-results/
         suite = ET.parse(test).getroot()
         results.append({key: suite.attrib[key] for key in ("name", "tests", "failures", "errors")})
 assert results and all(int(r["failures"]) == 0 and int(r["errors"]) == 0 for r in results)
-metadata = {"project": "OPlusKeyControl", "applicationId": "dev.opluskeycontrol", "version": "0.1.0-dev", "sha256": digest,
+metadata = {"project": "OPlusKeyControl", "applicationId": "dev.opluskeycontrol", "version": "0.1.0-dev", "sha256": digest, "advancedInputs": args.advanced_inputs,
             "bytes": out.stat().st_size, "unitTests": results, "scope": scope,
-            "xposed": "API 101 compileOnly; experimental individual-gesture Plus runtime" if runtime else "API 101 compileOnly; finite pass-through policy probe" if policy_probe else "API 101 compileOnly; own-scope zero-hook probe",
+            "xposed": "API 101 compileOnly; experimental semantic Power double and Plus-first Volume chords" if args.advanced_inputs else "API 101 compileOnly; experimental individual-gesture Plus runtime" if runtime else "API 101 compileOnly; finite pass-through policy probe" if policy_probe else "API 101 compileOnly; own-scope zero-hook probe",
             "device": "No install/runtime success implied by this packaging audit"}
-(DEST / ("runtime-build-evidence.json" if runtime else "policy-probe-build-evidence.json" if policy_probe else "build-evidence.json")).write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+(DEST / ("power-combos-build-evidence.json" if args.advanced_inputs else "runtime-build-evidence.json" if runtime else "policy-probe-build-evidence.json" if policy_probe else "build-evidence.json")).write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(metadata, indent=2))

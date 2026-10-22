@@ -15,7 +15,8 @@ sealed interface PolicyDecision {
     data class Replace(val session: Long, val rule: Rule) : PolicyDecision
 }
 
-class PolicyGate(private val allowedButtons: Set<Button> = setOf(Button.PLUS), private val requiredTier: Tier = Tier.ROOT) {
+class PolicyGate(private val allowedButtons: Set<Button> = setOf(Button.PLUS), private val requiredTier: Tier = Tier.ROOT,
+    private val semanticPowerDouble: Boolean = false, private val plusVolumeChords: Boolean = false) {
     @Volatile private var proof: PolicyProof? = null
     @Volatile private var lease: BackendLease? = null
     @Volatile private var configuration = PolicyConfiguration(emptyList(), false, Tier.BASIC)
@@ -32,8 +33,9 @@ class PolicyGate(private val allowedButtons: Set<Button> = setOf(Button.PLUS), p
         if (!config.enabled || config.tier != requiredTier || !currentLease.connected || uptimeMs >= currentLease.expiresAtMs ||
             !currentProof.verified || currentProof.firmware != firmware ||
             currentProof.allowed.none { it.sameAs(trigger) }) return PolicyDecision.PassThrough
-        // The first adapter is deliberately Plus-only. No Power path can be opted in.
-        if (trigger.button == Button.POWER || trigger.button !in allowedButtons || trigger.gesture == Gesture.CHORD) return PolicyDecision.PassThrough
+        if (trigger.button !in allowedButtons) return PolicyDecision.PassThrough
+        if (trigger.button == Button.POWER && (!semanticPowerDouble || trigger.gesture != Gesture.DOUBLE)) return PolicyDecision.PassThrough
+        if (trigger.gesture == Gesture.CHORD && (!plusVolumeChords || !trigger.isPlusVolumeChord())) return PolicyDecision.PassThrough
         return when (val resolution = RuleResolver.resolve(config.rules, trigger, localTime)) {
             is Resolution.Match -> if (resolution.rule.action.kind in currentLease.readyActions)
                 PolicyDecision.Replace(currentLease.session, resolution.rule) else PolicyDecision.PassThrough

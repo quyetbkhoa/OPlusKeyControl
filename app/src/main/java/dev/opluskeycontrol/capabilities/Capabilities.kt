@@ -18,8 +18,14 @@ data class Capability(val status: Support, val reason: Int)
 object Capabilities {
     // Rule preparation does not grant runtime authority to consume input.
     fun configurableTrigger(tier: Tier, trigger: Trigger): Boolean =
-        BuildConfig.POLICY_RUNTIME && tier == Tier.ROOT && trigger.button == Button.PLUS &&
-            trigger.gesture in setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG)
+        BuildConfig.POLICY_RUNTIME && tier == Tier.ROOT &&
+            ((trigger.button == Button.PLUS && trigger.gesture in setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG)) ||
+                (BuildConfig.ADVANCED_INPUTS && (trigger == Trigger(Button.POWER, Gesture.DOUBLE) || trigger.isPlusVolumeChord())))
+    fun featureFor(trigger: Trigger): Int = when {
+        trigger == Trigger(Button.POWER, Gesture.DOUBLE) -> dev.opluskeycontrol.input.PolicyBinder.POWER_DOUBLE
+        trigger.isPlusVolumeChord() -> dev.opluskeycontrol.input.PolicyBinder.PLUS_VOLUME
+        else -> dev.opluskeycontrol.input.PolicyBinder.PLUS
+    }
     fun accessibility(context: Context): Boolean {
         val services = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         return services.split(':').any { android.content.ComponentName.unflattenFromString(it)?.let { c ->
@@ -33,9 +39,11 @@ object Capabilities {
     fun trigger(context: Context, tier: Tier, trigger: Trigger): Capability {
         if (tier == Tier.SHIZUKU) return Capability(Support.VERIFY, R.string.shizuku_limitation)
         if (tier == Tier.ROOT) return when {
-            trigger.button == Button.POWER -> Capability(Support.UNSUPPORTED, R.string.power_backend_missing)
-            trigger.button == Button.PLUS && trigger.gesture != Gesture.CHORD && BuildConfig.POLICY_RUNTIME && PolicyBridge.connected.value -> Capability(Support.SUPPORTED, R.string.root_full_coverage)
+            configurableTrigger(tier, trigger) && PolicyBridge.connected.value && PolicyBridge.features.value and featureFor(trigger) != 0 ->
+                Capability(Support.SUPPORTED, if (trigger.button == Button.POWER) R.string.power_double_experimental else if (trigger.isPlusVolumeChord()) R.string.chord_plus_first else R.string.root_full_coverage)
+            configurableTrigger(tier, trigger) && PolicyBridge.connected.value -> Capability(Support.VERIFY, R.string.advanced_backend_missing)
             configurableTrigger(tier, trigger) -> Capability(Support.VERIFY, R.string.root_disconnected)
+            trigger.button == Button.POWER -> Capability(Support.UNSUPPORTED, R.string.power_backend_missing)
             else -> Capability(Support.VERIFY, R.string.root_limitation)
         }
         if (trigger.button !in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN) || trigger.gesture != Gesture.SINGLE)

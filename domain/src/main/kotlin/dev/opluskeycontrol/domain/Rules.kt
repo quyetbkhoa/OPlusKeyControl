@@ -8,6 +8,9 @@ enum class Gesture { SINGLE, DOUBLE, LONG, CHORD }
 enum class Tier { BASIC, SHIZUKU, ROOT }
 enum class ActionKind { TORCH_TOGGLE, TORCH_ON, TORCH_OFF, APP, ACTIVITY, STOCK_CAMERA_CAPTURE, RECORD_TOGGLE }
 
+fun Trigger.isPlusVolumeChord(): Boolean = gesture == Gesture.CHORD && Button.PLUS in setOf(button, partner) &&
+    setOf(button, partner).any { it == Button.VOLUME_UP || it == Button.VOLUME_DOWN }
+
 data class Trigger(val button: Button, val gesture: Gesture, val partner: Button? = null) {
     init {
         require((gesture == Gesture.CHORD) == (partner != null))

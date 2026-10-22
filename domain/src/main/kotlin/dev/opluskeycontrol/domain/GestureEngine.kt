@@ -16,7 +16,10 @@ class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timin
     private val lastUp = mutableMapOf<Button, Long>()
     private var owner: Pair<String, Int>? = null
     private var lastTime = Long.MIN_VALUE
-    private fun supports(button: Button, gesture: Gesture) = enabled.any { it.button == button && it.gesture == gesture }
+    private val suppressedLong = mutableSetOf<Button>()
+    private fun supports(button: Button, gesture: Gesture) = !(gesture == Gesture.LONG && button in suppressedLong) && enabled.any { it.button == button && it.gesture == gesture }
+    fun allowLongRecognition(button: Button, allow: Boolean) { if (allow) suppressedLong.remove(button) else suppressedLong.add(button) }
+    fun canStartChord(modifier: Button, partner: Button): Boolean = held[modifier]?.consumed == false && partner !in held
     fun reset() { held.clear(); pending.clear(); lastUp.clear(); owner = null; lastTime = Long.MIN_VALUE }
     fun nextDeadline(): Long? = (pending.values.map { it + timing.doubleMs } +
         held.filter { !it.value.consumed && supports(it.key, Gesture.LONG) }.values.map { it.down + timing.longMs }).minOrNull()
@@ -62,7 +65,7 @@ class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timin
             Edge.UP -> {
                 val press = held.remove(button) ?: return result
                 lastUp[button] = event.timeMs
-                if (!press.consumed && !(button == Button.POWER && event.timeMs - press.down >= timing.longMs)) {
+                if (!press.consumed && !(event.timeMs - press.down >= timing.longMs && (button == Button.POWER || !supports(button, Gesture.LONG)))) {
                     if (press.secondClick && supports(button, Gesture.DOUBLE)) result += Trigger(button, Gesture.DOUBLE)
                     else if (supports(button, Gesture.DOUBLE)) pending[button] = event.timeMs
                     else if (supports(button, Gesture.SINGLE)) result += Trigger(button, Gesture.SINGLE)

@@ -223,4 +223,8 @@
     <string name="ui_current_action_hint">Rule preview, not confirmation of execution.</string>
     <string name="ui_cancel_changes">Discard changes?</string>
     <string name="ui_camera_trial">Test before enabling</string>
+    <string name="power_double_experimental">Power double press · experimental. Single waits for the system multipress window; holds and emergency handling remain in OEM policy.</string>
+    <string name="chord_plus_first">Hold Plus, then press Volume+ or Volume− before the hold action fires. Volume-first order is not supported.</string>
+    <string name="advanced_backend_missing">This hook is not ready in the current backend.</string>
+    <string name="ui_configurable">Configurable</string>
 </resources>
