@@ -63,7 +63,7 @@ for pattern in ("domain/build/test-results/test/*.xml", "app/build/test-results/
 assert results and all(int(r["failures"]) == 0 and int(r["errors"]) == 0 for r in results)
 metadata = {"project": "OPlusKeyControl", "applicationId": "dev.opluskeycontrol", "version": "0.1.0-dev", "sha256": digest, "advancedInputs": args.advanced_inputs,
             "bytes": out.stat().st_size, "unitTests": results, "scope": scope,
-            "xposed": "API 101 compileOnly; experimental Power double, Plus-first chords and native Power/Volume chords" if args.advanced_inputs else "API 101 compileOnly; experimental individual-gesture Plus runtime" if runtime else "API 101 compileOnly; finite pass-through policy probe" if policy_probe else "API 101 compileOnly; own-scope zero-hook probe",
+            "xposed": "API 101 compileOnly; experimental Power double, bidirectional Plus/Volume, Plus-first Power and native Power/Volume chords" if args.advanced_inputs else "API 101 compileOnly; experimental individual-gesture Plus runtime" if runtime else "API 101 compileOnly; finite pass-through policy probe" if policy_probe else "API 101 compileOnly; own-scope zero-hook probe",
             "device": "No install/runtime success implied by this packaging audit"}
 (DEST / ("power-combos-build-evidence.json" if args.advanced_inputs else "runtime-build-evidence.json" if runtime else "policy-probe-build-evidence.json" if policy_probe else "build-evidence.json")).write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(metadata, indent=2))

@@ -28,11 +28,77 @@ class PlusChordSessionTest {
         val s=session(); assertFalse(s.volume(Button.VOLUME_UP,Edge.DOWN,200).consume)
         assertFalse(s.volume(Button.VOLUME_UP,Edge.UP,250).consume)
     }
-    @Test fun volumeFirstIsNotRetrospectivelyCaptured() {
-        val s=session(); assertFalse(s.volume(Button.VOLUME_UP,Edge.DOWN,80,80).consume)
-        s.plus(Edge.DOWN,100)
-        assertFalse(s.volume(Button.VOLUME_UP,Edge.UP,250,80).consume)
-        assertTrue(s.plus(Edge.UP,300).actions.isEmpty())
+    @Test fun volumeFirstWorksForBothPartnersWithoutSwallowingItsUp() {
+        for (partner in listOf(Button.VOLUME_UP,Button.VOLUME_DOWN)) {
+            val s=session(); assertFalse(s.volume(partner,Edge.DOWN,80,80).consume)
+            val result = s.plus(Edge.DOWN,100)
+            assertTrue(result.consume); assertEquals(partner.name,result.actions.single().rule.id)
+            assertTrue(s.plus(Edge.DOWN,100).actions.isEmpty())
+            assertFalse(s.volume(partner,Edge.DOWN,200,80,repeat=1).consume)
+            assertFalse(s.volume(partner,Edge.UP,250,80).consume)
+            assertTrue(s.plus(Edge.UP,300).actions.isEmpty())
+            assertTrue(s.advance(1000,time).isEmpty())
+        }
+    }
+    @Test fun volumeFirstAlsoWorksWhenPlusIsReleasedBeforeVolume() {
+        val s=session(); s.volume(Button.VOLUME_UP,Edge.DOWN,80,80)
+        assertEquals(1,s.plus(Edge.DOWN,100).actions.size)
+        assertTrue(s.plus(Edge.UP,200).consume)
+        assertFalse(s.volume(Button.VOLUME_UP,Edge.UP,300,80).consume)
+    }
+    @Test fun releasedOrCancelledVolumeCannotFormLaterChord() {
+        for(edge in listOf(Edge.UP,Edge.CANCEL)) {
+            val s=session();s.volume(Button.VOLUME_UP,Edge.DOWN,50,50);s.volume(Button.VOLUME_UP,edge,80,50)
+            assertTrue(s.plus(Edge.DOWN,100).actions.isEmpty())
+        }
+    }
+    @Test fun longVolumeHoldAndRepeatsStillAllowReverseChord() {
+        val s=session();s.volume(Button.VOLUME_UP,Edge.DOWN,1,1)
+        s.volume(Button.VOLUME_UP,Edge.DOWN,1000,1,repeat=1)
+        assertEquals(1,s.plus(Edge.DOWN,3000).actions.size)
+    }
+    @Test fun disabledRuleAndMissingActionReadinessDoNotReplaceReverseChord() {
+        val s=session(rules.map { it.copy(enabled=false) });s.volume(Button.VOLUME_UP,Edge.DOWN,80,80)
+        assertFalse(s.plus(Edge.DOWN,100).consume)
+    }
+    @Test fun disconnectDropsObservedVolumes() {
+        val s=session();s.volume(Button.VOLUME_UP,Edge.DOWN,80,80);s.disconnect()
+        assertFalse(s.plus(Edge.DOWN,100).consume)
+        assertFalse(s.volume(Button.VOLUME_UP,Edge.UP,200,80).consume)
+    }
+    @Test fun bothVolumesHeldCannotPickArbitraryChordOrRunPlusSingle() {
+        val single=Rule("single",Trigger(Button.PLUS,Gesture.SINGLE),Action(ActionKind.TORCH_TOGGLE))
+        val s=session(rules+single);s.volume(Button.VOLUME_UP,Edge.DOWN,50,50);s.volume(Button.VOLUME_DOWN,Edge.DOWN,60,60)
+        assertTrue(s.plus(Edge.DOWN,100).actions.isEmpty());s.plus(Edge.UP,200)
+        assertTrue(s.advance(1000,time).isEmpty())
+    }
+    @Test fun foreignDeviceUpCannotErasePhysicalVolumeHold() {
+        val s=session();s.volume(Button.VOLUME_UP,Edge.DOWN,80,80)
+        s.volume(Button.VOLUME_UP,Edge.UP,90,80,device=9)
+        assertEquals(1,s.plus(Edge.DOWN,100).actions.size)
+    }
+    @Test fun reverseChordSuppressesBothMappedPlusSingleAndLong() {
+        val extra=listOf(Gesture.SINGLE,Gesture.LONG).map { Rule(it.name,Trigger(Button.PLUS,it),Action(ActionKind.TORCH_TOGGLE)) }
+        val s=session(rules+extra);s.volume(Button.VOLUME_UP,Edge.DOWN,80,80)
+        assertEquals("VOLUME_UP",s.plus(Edge.DOWN,100).actions.single().rule.id)
+        assertTrue(s.advance(700,time).isEmpty());s.volume(Button.VOLUME_UP,Edge.UP,800,80)
+        assertTrue(s.plus(Edge.UP,900).actions.isEmpty());assertTrue(s.advance(1000,time).isEmpty())
+    }
+    @Test fun previouslyCommittedVolumeCannotTurnNewPlusIntoSingleBeforeVolumeRelease() {
+        val single=Rule("single",Trigger(Button.PLUS,Gesture.SINGLE),Action(ActionKind.TORCH_TOGGLE))
+        val s=session(rules+single);s.volume(Button.VOLUME_UP,Edge.DOWN,50,50)
+        assertEquals(1,s.plus(Edge.DOWN,100).actions.size);s.plus(Edge.UP,150)
+        assertTrue(s.plus(Edge.DOWN,200).actions.isEmpty());s.plus(Edge.UP,250)
+        assertTrue(s.advance(800,time).isEmpty());assertFalse(s.volume(Button.VOLUME_UP,Edge.UP,900,50).consume)
+    }
+    @Test fun reconfigurationRevokesEarlierUnownedVolumeObservation() {
+        val s=session();s.volume(Button.VOLUME_UP,Edge.DOWN,50,50)
+        s.configure(PolicyConfiguration(rules,true,Tier.ROOT),Timing(),PolicyProof("fw",chords.toSet(),true),BackendLease(2,10000,true,setOf(ActionKind.TORCH_TOGGLE)))
+        assertTrue(s.plus(Edge.DOWN,100).actions.isEmpty())
+    }
+    @Test fun expiredLeaseCannotUseReverseChord() {
+        val s=session();s.volume(Button.VOLUME_UP,Edge.DOWN,80,80)
+        assertFalse(s.plus(Edge.DOWN,10000).consume)
     }
     @Test fun duplicateAndRepeatVolumeDoesNotDoubleDispatch() {
         val s=session(); s.plus(Edge.DOWN,100); assertEquals(1,s.volume(Button.VOLUME_UP,Edge.DOWN,200).actions.size)

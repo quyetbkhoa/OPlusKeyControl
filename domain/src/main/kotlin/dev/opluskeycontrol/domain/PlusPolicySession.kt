@@ -29,11 +29,14 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     private var plusDownAt = 0L
     private var longThreshold = 600L
     private val decisions = LinkedHashMap<PolicyEvent, Boolean>()
-    private data class PartnerPress(val deviceId: Int, val downTime: Long)
+    private data class PartnerPress(val deviceId: Int, val downTime: Long, val at: Long = downTime, val consume: Boolean = true)
+    // Earlier Volume DOWNs already belong to OEM. Their UP/repeats must also pass.
+    private val precedingVolumes = mutableMapOf<Button, PartnerPress>()
     private val partners = mutableMapOf<Button, PartnerPress>()
     private val partnerDecisions = LinkedHashMap<Pair<Button, PolicyEvent>, Boolean>()
 
     fun configure(configuration: PolicyConfiguration, timing: Timing, proof: PolicyProof, lease: BackendLease) {
+        precedingVolumes.clear()
         engine = GestureEngine(allTriggers, timing)
         longThreshold = timing.longMs
         deferredLong = false; chordCommitted = false
@@ -46,8 +49,8 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         gate.verify(proof); gate.attach(lease); connected = true
     }
 
-    fun disconnect() { deferredLong = false; connected = false; gate.disconnect(); engine.reset(); draining = ownedDown }
-    fun cancelGesture() { deferredLong = false; engine.reset(); draining = ownedDown } // paired UP closes an owned DOWN
+    fun disconnect() { precedingVolumes.clear(); deferredLong = false; connected = false; gate.disconnect(); engine.reset(); draining = ownedDown }
+    fun cancelGesture() { precedingVolumes.clear(); deferredLong = false; engine.reset(); draining = ownedDown } // paired UP closes an owned DOWN
     fun nextDeadline(): Long? = if (connected) engine.nextDeadline() else null
 
     private fun resolve(candidates: List<Trigger>, now: Long, local: ZonedDateTime) = candidates.mapNotNull {
@@ -72,20 +75,36 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
             chordCommitted = false; plusDownAt = event.time
             engine.allowLongRecognition(button, !chordReady)
             ownedDown = true; device = event.deviceId
+            if (precedingVolumes.size > 1 || partners.values.any { !it.consume }) cancelGesture()
         }
         if (!ownedDown) return PolicyOutcome(false)
+        // Normalize only inside the recognizer, never replay/inject a hardware key.
+        // A reverse-order Volume pair stays OEM-owned even after its chord commits.
+        val reverse = if (event.edge == Edge.DOWN && event.repeat == 0 && !draining && !chordCommitted && precedingVolumes.size == 1)
+            precedingVolumes.entries.single().takeIf { event.time >= it.value.at &&
+                gate.decide(Trigger(button, Gesture.CHORD, it.key), firmware, now, local) is PolicyDecision.Replace } else null
         val actions = (if (connected && !draining) resolve(engine.accept(ButtonEvent("owned-input", event.deviceId, button,
             event.edge, event.time, event.repeat)), now, local) else emptyList()) +
             if (event.edge == Edge.UP && connected && !draining && deferredLong && !chordCommitted && event.time - plusDownAt >= longThreshold)
                 resolve(listOf(Trigger(button, Gesture.LONG)), now, local) else emptyList()
+        val reverseActions = if (reverse != null && engine.canStartChord(button, reverse.key)) {
+            val chord = Trigger(button, Gesture.CHORD, reverse.key)
+            val candidates = engine.accept(ButtonEvent("owned-input", event.deviceId, reverse.key, Edge.DOWN, event.time))
+            if (candidates.any { it.sameAs(chord) }) {
+                chordCommitted = true
+                partners[reverse.key] = reverse.value.copy(consume = false)
+                precedingVolumes.clear()
+                resolve(candidates, now, local)
+            } else emptyList()
+        } else emptyList()
         if (event.edge == Edge.UP) { ownedDown = false; draining = false; if (engine.nextDeadline() == null) device = null }
         decisions[event] = true
         while (decisions.size > 32) decisions.remove(decisions.keys.first())
-        return PolicyOutcome(true, actions)
+        return PolicyOutcome(true, actions + reverseActions)
     }
 
-    /** A Plus-first chord may own a Volume pair from another hardware device.
-     * An earlier standalone Volume DOWN is never swallowed or replayed.
+    /** Plus-first owns its partner pair; Volume-first observes a pair already owned
+     * by OEM and replaces only the Plus sequence. No hardware event replay.
      */
     fun acceptPartner(partner: Button, event: PolicyEvent, now: Long, local: ZonedDateTime): PolicyOutcome {
         if (partner !in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER)) return PolicyOutcome(false)
@@ -100,13 +119,27 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
                     engine.accept(ButtonEvent("owned-input", device!!, partner, Edge.UP, event.time, event.repeat))
                 else cancelGesture()
             }
-            rememberPartner(key)
-            return PolicyOutcome(true)
+            rememberPartner(key, tracked.consume)
+            return PolicyOutcome(tracked.consume)
         }
+        val earlier = precedingVolumes[partner]
+        if (earlier != null && (event.deviceId != earlier.deviceId || event.downTime != earlier.downTime))
+            return PolicyOutcome(false)
+        if (event.edge != Edge.DOWN) precedingVolumes.remove(partner)
         val chord = chordTriggers.firstOrNull { it.partner == partner }
         if (chord == null || !connected || !ownedDown || draining || event.edge != Edge.DOWN || event.repeat != 0 ||
             gate.decide(chord, firmware, now, local) !is PolicyDecision.Replace) {
-            cancelGesture(); return PolicyOutcome(false)
+            if (!ownedDown && connected && partner in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN) &&
+                event.edge == Edge.DOWN && chord != null && gate.decide(chord, firmware, now, local) is PolicyDecision.Replace) {
+                if (event.repeat == 0) {
+                    // Cancel pending Plus clicks but retain other physical Volume holds:
+                    // two held Volumes are ambiguous/reserved, never pick one arbitrarily.
+                    engine.reset(); deferredLong = false
+                    precedingVolumes.putIfAbsent(partner, PartnerPress(event.deviceId, event.downTime, event.time, consume = false))
+                }
+            } else if (event.repeat == 0 || event.edge != Edge.DOWN) cancelGesture()
+            rememberPartner(key, false)
+            return PolicyOutcome(false)
         }
         val due = resolve(engine.advance(event.time), now, local)
         if (!engine.canStartChord(button, partner)) { cancelGesture(); return PolicyOutcome(false, due) }
@@ -118,8 +151,8 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         rememberPartner(key)
         return PolicyOutcome(true, due + resolve(candidates, now, local))
     }
-    private fun rememberPartner(key: Pair<Button, PolicyEvent>) {
-        partnerDecisions[key] = true
+    private fun rememberPartner(key: Pair<Button, PolicyEvent>, consume: Boolean = true) {
+        partnerDecisions[key] = consume
         while (partnerDecisions.size > 32) partnerDecisions.remove(partnerDecisions.keys.first())
     }
 

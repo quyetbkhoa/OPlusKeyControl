@@ -224,7 +224,7 @@
     <string name="ui_cancel_changes">Discard changes?</string>
     <string name="ui_camera_trial">Test before enabling</string>
     <string name="power_double_experimental">Power double press · experimental. Single waits for the system multipress window; holds and emergency handling remain in OEM policy.</string>
-    <string name="chord_plus_first">With Plus: hold Plus first, then press the other key. With a chord rule, Plus hold fires on release. Power + Volume: press within 150 ms, in either order.</string>
+    <string name="chord_plus_first">Plus + Volume: hold either key, then press the other. Volume first may initially change volume. Plus + Power: hold Plus first. With a chord rule, Plus hold fires on release. Power + Volume: within 150 ms, in either order.</string>
     <string name="advanced_backend_missing">This hook is not ready in the current backend.</string>
     <string name="ui_configurable">Configurable</string>
     <string name="inspector_title">Activity / UI inspector</string>

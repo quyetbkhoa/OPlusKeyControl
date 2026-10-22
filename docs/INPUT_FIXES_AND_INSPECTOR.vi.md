@@ -78,3 +78,24 @@ Bản sửa nút đã build/test/lint thành công, cài đè và soft reboot. H
 máy khớp bản cuối ở trên; cấu hình tiếp tục giống từng byte. TCP kết nối lại.
 Hook/action executor không thay đổi trong lượt sửa màu nút. Không thử SOS,
 không ghi âm/chụp ảnh, không sửa rule hoặc module PowerKey bên ngoài.
+
+## Plus + Volume nhận cả hai thứ tự
+
+Đã bỏ giới hạn Plus trước cho hai tổ hợp Plus/Volume. Volume xuống trước được
+quan sát theo deviceId/downTime; Plus xuống khi Volume vẫn giữ sẽ nhận cùng rule
+canonical. Không replay hoặc inject sự kiện. Volume DOWN đã chuyển cho OEM nên
+repeat/UP của đúng cặp đó cũng luôn chuyển cho OEM, kể cả sau khi mất kết nối.
+Vì vậy âm lượng có thể thay đổi trước khi Plus được bấm; không thể thu hồi thay
+đổi đã xảy ra. Volume dùng riêng không bị thêm độ chờ. Plus trước vẫn chỉ chiếm
+cặp partner sau khi tổ hợp thực sự khớp.
+
+Không chọn ngẫu nhiên khi cả hai Volume cùng giữ; UP/CANCEL, thiết bị lạ, mất
+lease, đổi cấu hình, repeat và duplicate không được tạo thêm action. Sau chord
+không chạy thêm Plus single/long. Thay đổi này chỉ dành cho Plus/Volume; Plus/Power
+vẫn yêu cầu Plus trước, Power/Volume dùng cửa sổ native 150 ms cả hai thứ tự.
+
+166 JVM tests đạt; lint 0 lỗi / 53 cảnh báo. Đã cài APK hash
+bb110e5186355dbf7e6294c1aed5327e987bccabe6e8c0f8abca4b010d21f75b
+và soft reboot theo quyền đã cho. Hash APK trên máy khớp, cấu hình giống từng
+byte trước/sau cài, kernel boot ID giữ nguyên và system_server đổi PID. TCP vẫn
+cổng 5555. Chưa có xác nhận nút thật cho chiều Volume trước trong lượt sửa này.

@@ -224,7 +224,7 @@
     <string name="ui_cancel_changes">Bỏ các thay đổi?</string>
     <string name="ui_camera_trial">Cần thử trước khi bật</string>
     <string name="power_double_experimental">Power nhấn đúp · thử nghiệm. Nhấn đơn chờ cửa sổ nhiều lần của hệ thống; nhấn giữ và khẩn cấp vẫn do OEM xử lý.</string>
-    <string name="chord_plus_first">Có Plus: giữ Plus trước rồi nhấn nút còn lại. Khi có rule tổ hợp, Plus nhấn giữ chạy lúc thả. Nguồn + Volume: nhấn gần đồng thời (150 ms), hỗ trợ cả hai thứ tự.</string>
+    <string name="chord_plus_first">Plus + Volume: giữ một nút rồi nhấn nút còn lại, nhận cả hai thứ tự. Volume trước có thể đổi âm lượng ban đầu. Plus + Nguồn: giữ Plus trước. Khi có rule tổ hợp, Plus nhấn giữ chạy lúc thả. Nguồn + Volume: trong 150 ms, cả hai thứ tự.</string>
     <string name="advanced_backend_missing">Hook này chưa sẵn sàng trên backend hiện tại.</string>
     <string name="ui_configurable">Có thể cấu hình</string>
     <string name="inspector_title">Kiểm tra Activity / UI</string>
