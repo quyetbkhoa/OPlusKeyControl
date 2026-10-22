@@ -55,13 +55,10 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         setContent {
-            val dark = isSystemInDarkTheme()
-            val colors = if (Build.VERSION.SDK_INT >= 31) {
-                if (dark) dynamicDarkColorScheme(this) else dynamicLightColorScheme(this)
-            } else if (dark) darkColorScheme() else lightColorScheme()
-            MaterialTheme(colorScheme = colors) {
+            dev.opluskeycontrol.ui.OPlusTheme {
                 KeyControlScreen(app, onPermissions = {
                     permissions.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO) +
                         if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())

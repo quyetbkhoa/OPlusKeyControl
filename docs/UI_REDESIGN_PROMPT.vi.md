@@ -1,5 +1,8 @@
 # OPlusKeyControl — brief thiết kế lại toàn bộ giao diện
 
+> Cập nhật 22/10/2026: người dùng đã chốt **chỉ dark mode, chuyển sang code**.
+> Các yêu cầu light mode phía dưới thuộc brief ban đầu và không áp dụng cho lượt này.
+
 Tài liệu này có thể gửi nguyên văn cho AI/designer tạo giao diện. Không cần đọc source hoặc cuộc trò chuyện trước.
 
 ## 1. Nhiệm vụ và sản phẩm
