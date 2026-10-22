@@ -7,6 +7,10 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -91,14 +95,14 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
         onDispose { lifecycle.removeObserver(observer) }
     }
     var settingsPage by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("root") }
-    var buttonFilter by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    var buttonFilter by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(1) }
     var deleting by remember { mutableStateOf<Rule?>(null) }
     var rootIdentity by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(settingsPage) { settingsScroll.scrollToItem(0) }
     val now = remember(refresh) { ZonedDateTime.now() }
-    val labels = listOf(R.string.overview, R.string.mappings, R.string.settings)
-    val navIcons = listOf(Icons.Outlined.Home, Icons.AutoMirrored.Outlined.List, Icons.Outlined.Settings)
-    val subpage = tab == 2 && settingsPage != "root"
+    val labels = listOf(R.string.nd_keys, R.string.nd_tools)
+    val navIcons = listOf(Icons.Outlined.Home, Icons.Outlined.Settings)
+    val subpage = tab == 1 && settingsPage != "root"
     androidx.activity.compose.BackHandler(enabled = subpage || tab != 0) { if (subpage) settingsPage = "root" else tab = 0 }
     val openAppSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + context.packageName))) }
     val titles = mapOf("permissions" to R.string.ui_connection, "battery" to R.string.ui_battery, "recordings" to R.string.recordings,
@@ -114,145 +118,166 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
         title = { Text(stringResource(R.string.ui_delete_rule)) }, text = { Text(triggerTitle(rule.trigger)) },
         confirmButton = { TextButton(onClick = { app.store.mutate { c -> c.copy(rules = c.rules.filterNot { it.id == rule.id }) }; deleting = null }) { Text(stringResource(R.string.delete), color = OpColors.Red) } },
         dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) } }) }
-    Scaffold(
-        topBar = { OpAppBar(stringResource(if (subpage) titles.getValue(settingsPage) else if (tab == 0) R.string.app_name else labels[tab]),
-            onBack = if (subpage) ({ settingsPage = "root" }) else null) {
-            if (!subpage && tab == 0) OutlinedButton(onClick = { app.store.disable() }, colors = ButtonDefaults.outlinedButtonColors(contentColor = OpColors.Red)) {
-                OpGlyph("power", OpColors.Red, 18.dp); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.disable))
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val expanded = maxWidth >= 720.dp
+        Row(Modifier.fillMaxSize()) {
+            if (expanded && !subpage) NavigationRail(containerColor = OpColors.Background) {
+                Spacer(Modifier.height(24.dp))
+                labels.forEachIndexed { index, label -> NavigationRailItem(selected = tab == index, onClick = { tab = index },
+                    icon = { if(index==0) OpGlyph("plus",if(tab==index) OpColors.Accent else OpColors.Muted) else Icon(navIcons[index],null) }, label = { Text(stringResource(label)) }) }
             }
-            if (!subpage && tab == 1) TextButton(onClick = { editing = null; editor = true }) {
-                Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.add_rule))
-            }
-        } },
-        bottomBar = { if (!subpage) NavigationBar(containerColor = OpColors.Surface) { labels.forEachIndexed { index, label ->
-            NavigationBarItem(selected = tab == index, onClick = { tab = index }, icon = { Icon(navIcons[index], null) }, label = { Text(stringResource(label)) },
-                colors = NavigationBarItemDefaults.colors(selectedIconColor = OpColors.Mint, selectedTextColor = OpColors.Mint, indicatorColor = OpColors.Mint.copy(alpha = .12f), unselectedIconColor = OpColors.Muted, unselectedTextColor = OpColors.Muted))
-        } } }
-    ) { insets ->
-        LazyColumn(Modifier.padding(insets).fillMaxSize(), state = when(tab) { 0 -> overviewScroll; 1 -> mappingsScroll; else -> settingsScroll },
-            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (recording) item { OpCard(selected = true, tint = OpColors.Red) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    IconTile("mic", OpColors.Red, 40.dp)
-                    Text(stringResource(R.string.recording), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = { context.startService(Intent(context, RecorderService::class.java).setAction(RecorderService.STOP)) }, colors = ButtonDefaults.buttonColors(containerColor = OpColors.Red)) { Text(stringResource(R.string.stop)) }
-                }
-            } }
-            if (message != null) item { OpCard { Text(stringResource(message!!)); TextButton(onClick = { app.actions.message.value = null }) { Text(stringResource(R.string.dismiss)) } } }
-            if (recordError) item { Notice(stringResource(R.string.record_error)) }
-            if (storeError) item { Notice(stringResource(R.string.storage_error)) }
-            when (tab) {
-                0 -> {
-                    item { OpCard(selected = config.enabled && !emergency) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            IconTile("plus", if (config.enabled && !emergency) OpColors.Mint else OpColors.Muted, 60.dp)
-                            Column(Modifier.weight(1f)) {
-                                Text(stringResource(R.string.ui_remap_plus), color = OpColors.Muted, style = MaterialTheme.typography.bodyMedium)
-                                Text(stringResource(if (config.enabled && !emergency) R.string.enabled else R.string.disabled), style = MaterialTheme.typography.headlineMedium)
-                            }
-                            Switch(config.enabled && !emergency, onCheckedChange = app.store::setEnabled)
-                        }
-                    } }
-                    item { OpCard {
-                        OpRow(stringResource(config.tier.label()), stringResource(R.string.ui_selected_mode), "shield", onClick = { tab = 2; settingsPage = "permissions" })
-                        BackendStatus(config.tier, connected, rootConnected, rootState, shizukuConnected, shizukuGranted)
-                        TextButton(onClick = { tab = 2; settingsPage = "permissions" }) { Text(stringResource(R.string.ui_resolve_connection)); Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) }
-                    } }
-                    item { SectionTitle(stringResource(R.string.ui_current_plus)) }
-                    if (config.rules.isEmpty()) item { OpCard {
-                        OpRow(stringResource(R.string.no_rules), stringResource(R.string.ui_first_rule), "plus")
-                        Button(onClick = { editing = null; editor = true }) { Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.add_rule)) }
-                    } }
-                    items(listOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG), key = { "preview-${it.name}" }) { gesture ->
-                        val trigger = Trigger(Button.PLUS, gesture)
-                        val resolution = RuleResolver.resolve(config.rules, trigger, now)
-                        val rule = (resolution as? Resolution.Match)?.rule
-                        val plusActive = config.enabled && !emergency && config.tier == Tier.ROOT && rootConnected && config.rules.any { it.enabled && it.trigger.button == Button.PLUS && it.schedule?.matches(now) != false && Capabilities.action(context, it.action).status == Support.SUPPORTED }
-                        OpCard {
-                            if (rule != null) {
-                                val status = ruleStatus(rule, config, rootConnected, emergency, now, context, backendFeatures)
-                                OpRow(stringResource(rule.action.kind.label()), stringResource(gesture.label()), rule.action.kind.glyph(), rule.action.kind.tint())
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusChip(stringResource(status.first), status.second) }
-                                if (rule.schedule != null) ScheduleText(rule.schedule)
-                            } else {
-                                OpRow(stringResource(gesture.label()), stringResource(if (plusActive) R.string.ui_unassigned_no_action else R.string.pass_through), "plus", OpColors.Muted)
-                            }
-                        }
+            Scaffold(modifier = Modifier.weight(1f),
+                topBar = { OpAppBar(stringResource(if(subpage) titles.getValue(settingsPage) else R.string.app_name),
+                    onBack = if(subpage) ({ settingsPage = "root" }) else null) {
+                    if (!subpage) TextButton(onClick = { app.store.disable() }) {
+                        Text(stringResource(R.string.disable),color=OpColors.Red)
                     }
-                    item { TextButton(onClick = { refresh++ }) { Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.refresh_preview)) } }
-                    if (!batteryExempt) item { OpCard { OpRow(stringResource(R.string.battery_limited), stringResource(R.string.ui_battery_hint), "leaf", OpColors.Amber, onClick = { tab = 2; settingsPage = "battery" }) } }
-                    item { InfoCard(R.string.ui_plus_help, R.string.root_full_coverage) }
-                }
-                1 -> {
-                    item { androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(R.string.ui_all, R.string.plus, R.string.power, R.string.ui_volume).forEachIndexed { index, label -> FilterChip(buttonFilter == index, onClick = { buttonFilter = index }, label = { Text(stringResource(label)) }) }
-                    } }
-                    val filtered = config.rules.filter { when(buttonFilter) { 1 -> it.trigger.button == Button.PLUS; 2 -> it.trigger.button == Button.POWER; 3 -> it.trigger.button in setOf(Button.VOLUME_UP,Button.VOLUME_DOWN); else -> true } }
-                    if (filtered.isEmpty()) item { OpCard {
-                        OpRow(stringResource(R.string.no_rules), stringResource(R.string.ui_first_rule), "plus")
-                        Button(onClick = { editing = null; editor = true }) { Text(stringResource(R.string.add_rule)) }
-                    } }
-                    val groups = filtered.partition { it.enabled && Capabilities.configurableTrigger(config.tier, it.trigger) }
-                    listOf(groups.first to R.string.ui_enabled_rules, groups.second to R.string.ui_draft_rules).forEach { (rules, title) ->
-                        if (rules.isNotEmpty()) item { SectionTitle(stringResource(title, rules.size)) }
-                        items(rules, key = { it.id }) { rule ->
-                            val status = ruleStatus(rule, config, rootConnected, emergency, now, context, backendFeatures)
-                            var menu by remember { mutableStateOf(false) }
-                            val canEnable = (Capabilities.configurableTrigger(config.tier, rule.trigger) || Capabilities.trigger(context, config.tier, rule.trigger).status == Support.SUPPORTED) && Capabilities.action(context, rule.action).status == Support.SUPPORTED
-                            OpCard {
-                                OpRow(stringResource(rule.action.kind.label()), triggerTitle(rule.trigger), rule.action.kind.glyph(), rule.action.kind.tint())
-                                rule.action.packageName?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = OpColors.Muted) }
-                                ScheduleText(rule.schedule)
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.weight(1f)) { StatusChip(stringResource(status.first), status.second) }
-                                    Switch(rule.enabled, enabled = rule.enabled || canEnable, onCheckedChange = { checked ->
-                                        if (checked && RuleResolver.conflicts(rule.copy(enabled = true), config.rules)) app.actions.message.value = R.string.conflict
-                                        else app.store.mutate { c -> c.copy(rules = c.rules.map { if (it.id == rule.id) it.copy(enabled = checked) else it }) }
-                                    })
-                                    Box {
-                                        IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.ui_rule_options)) }
-                                        DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                                            DropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, onClick = { editing = rule; editor = true; menu = false })
-                                            DropdownMenuItem(text = { Text(stringResource(R.string.delete), color = OpColors.Red) }, onClick = { deleting = rule; menu = false })
+                } },
+                bottomBar = { if (!subpage && !expanded) NavigationBar(containerColor = OpColors.Background, tonalElevation = 0.dp) {
+                    labels.forEachIndexed { index, label -> NavigationBarItem(selected = tab == index, onClick = { tab = index },
+                        icon = { if(index==0) OpGlyph("plus",if(tab==index) OpColors.Accent else OpColors.Muted) else Icon(navIcons[index],null) }, label = { Text(stringResource(label)) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = OpColors.Accent, selectedTextColor = OpColors.Accent,
+                            indicatorColor = OpColors.Accent.copy(alpha=.12f), unselectedIconColor = OpColors.Muted, unselectedTextColor = OpColors.Muted)) }
+                } }
+            ) { insets ->
+                Box(Modifier.padding(insets).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    LazyColumn(Modifier.widthIn(max=840.dp).fillMaxSize(), state = if(tab == 0) mappingsScroll else settingsScroll,
+                        contentPadding = PaddingValues(start=20.dp,end=20.dp,top=8.dp,bottom=24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (recording) item { OpCard(selected = true, tint = OpColors.Red) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                OpGlyph("mic", OpColors.Red)
+                                Text(stringResource(R.string.recording), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                Button(onClick = { context.startService(Intent(context, RecorderService::class.java).setAction(RecorderService.STOP)) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = OpColors.Red)) { Text(stringResource(R.string.stop)) }
+                            }
+                        } }
+                        if (message != null) item { OpCard { Text(stringResource(message!!)); TextButton(onClick = { app.actions.message.value = null }) { Text(stringResource(R.string.dismiss)) } } }
+                        if (recordError) item { Notice(stringResource(R.string.record_error)) }
+                        if (storeError) item { Notice(stringResource(R.string.storage_error)) }
+                        if (tab == 0) {
+                            item {
+                                Text(stringResource(R.string.nd_keys_title), style = MaterialTheme.typography.headlineMedium)
+                                Text(stringResource(R.string.nd_rules_count, config.rules.count { it.enabled }, config.rules.size),
+                                    color = OpColors.Muted, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            item { OpCard {
+                                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                        Text(stringResource(R.string.nd_master),style=MaterialTheme.typography.titleMedium)
+                                        Row(Modifier.fillMaxWidth().clickable {tab=1;settingsPage="permissions"}.heightIn(min=48.dp),
+                                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                            val ready=when(config.tier) {Tier.ROOT->rootConnected;Tier.BASIC->connected;Tier.SHIZUKU->shizukuGranted}
+                                            Column(Modifier.weight(1f)) {
+                                                Text(stringResource(config.tier.label()),style=MaterialTheme.typography.bodySmall,color=OpColors.Muted)
+                                                Text(stringResource(if(ready) R.string.nd_connected else R.string.nd_check_connection),
+                                                    color=if(ready) OpColors.Success else OpColors.Amber,style=MaterialTheme.typography.bodySmall)
+                                            }
+                                            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight,null,tint=OpColors.Muted,modifier=Modifier.size(18.dp))
                                         }
                                     }
+                                    Column(horizontalAlignment=Alignment.End) {
+                                        Switch(config.enabled && !emergency,onCheckedChange=app.store::setEnabled)
+                                        Text(stringResource(if(config.enabled && !emergency) R.string.enabled else R.string.disabled),
+                                            color=if(config.enabled && !emergency) OpColors.Accent else OpColors.Muted,style=MaterialTheme.typography.bodySmall)
+                                    }
                                 }
-                                if (!canEnable && !rule.enabled) Text(stringResource(if (!Capabilities.configurableTrigger(config.tier,rule.trigger)) Capabilities.trigger(context,config.tier,rule.trigger).reason else Capabilities.action(context,rule.action).reason), style = MaterialTheme.typography.bodySmall, color = OpColors.Muted)
+                            } }
+                            item { FlowRow(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                listOf(R.string.ui_all,R.string.plus,R.string.power,R.string.ui_volume,R.string.nd_chords).forEachIndexed { index,label ->
+                                    FilterChip(buttonFilter==index,onClick={buttonFilter=index},label={if(index==0) Icon(Icons.AutoMirrored.Outlined.List,stringResource(label),modifier=Modifier.size(18.dp)) else Text(stringResource(label))})
+                                }
+                            } }
+                            item { Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                                Text(stringResource(R.string.nd_mappings),Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
+                                FilledTonalButton(onClick={ editing=null;editor=true },modifier=Modifier.heightIn(min=48.dp)) {
+                                    Icon(Icons.Outlined.Add,null,modifier=Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(stringResource(R.string.nd_add))
+                                }
+                            } }
+                            val filtered=config.rules.filter { when(buttonFilter) {
+                                1 -> it.trigger.button==Button.PLUS && it.trigger.gesture!=Gesture.CHORD
+                                2 -> it.trigger.button==Button.POWER && it.trigger.gesture!=Gesture.CHORD
+                                3 -> it.trigger.button in setOf(Button.VOLUME_UP,Button.VOLUME_DOWN) && it.trigger.gesture!=Gesture.CHORD
+                                4 -> it.trigger.gesture==Gesture.CHORD
+                                else -> true
+                            } }
+                            if(filtered.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(vertical=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                OpGlyph("plus",OpColors.Muted,32.dp)
+                                Text(stringResource(R.string.no_rules),style=MaterialTheme.typography.titleMedium)
+                                Text(stringResource(R.string.nd_empty_hint),color=OpColors.Muted,style=MaterialTheme.typography.bodyMedium)
+                            } }
+                            val groups=filtered.partition { it.enabled && Capabilities.configurableTrigger(config.tier,it.trigger) }
+                            listOf(groups.first to R.string.ui_enabled_rules,groups.second to R.string.ui_draft_rules).forEach { (rules,title) ->
+                                if(rules.isNotEmpty()) item { SectionTitle(stringResource(title,rules.size)) }
+                                items(rules,key={it.id}) { rule ->
+                                    val status=ruleStatus(rule,config,rootConnected,emergency,now,context,backendFeatures)
+                                    var menu by remember { mutableStateOf(false) }
+                                    val canEnable=(Capabilities.configurableTrigger(config.tier,rule.trigger) || Capabilities.trigger(context,config.tier,rule.trigger).status==Support.SUPPORTED) && Capabilities.action(context,rule.action).status==Support.SUPPORTED
+                                    OpCard {
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                            Column(Modifier.weight(1f).clickable { editing=rule;editor=true },verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                Text(triggerTitle(rule.trigger),color=OpColors.Accent,style=MaterialTheme.typography.labelMedium)
+                                                Text(stringResource(rule.action.kind.label()),style=MaterialTheme.typography.titleMedium)
+                                                rule.action.packageName?.let { Text(it,color=OpColors.Muted,style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis) }
+                                                ScheduleText(rule.schedule)
+                                                StatusChip(stringResource(status.first),status.second)
+                                            }
+                                            Column(horizontalAlignment=Alignment.End) {
+                                                Switch(rule.enabled,enabled=rule.enabled || canEnable,onCheckedChange={checked ->
+                                                    if(checked && RuleResolver.conflicts(rule.copy(enabled=true),config.rules)) app.actions.message.value=R.string.conflict
+                                                    else app.store.mutate { c -> c.copy(rules=c.rules.map { if(it.id==rule.id) it.copy(enabled=checked) else it }) }
+                                                })
+                                                Box {
+                                                    IconButton(onClick={menu=true}) { Icon(Icons.Outlined.MoreVert,stringResource(R.string.ui_rule_options),tint=OpColors.Muted) }
+                                                    DropdownMenu(menu,onDismissRequest={menu=false}) {
+                                                        DropdownMenuItem(text={Text(stringResource(R.string.edit))},onClick={editing=rule;editor=true;menu=false})
+                                                        DropdownMenuItem(text={Text(stringResource(R.string.delete),color=OpColors.Red)},onClick={deleting=rule;menu=false})
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if(!canEnable && !rule.enabled) Text(stringResource(if(!Capabilities.configurableTrigger(config.tier,rule.trigger)) Capabilities.trigger(context,config.tier,rule.trigger).reason else Capabilities.action(context,rule.action).reason),style=MaterialTheme.typography.bodySmall,color=OpColors.Muted)
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
-                2 -> when (settingsPage) {
-                    "root" -> {
-                        val pages = listOf(
-                            Triple("permissions", R.string.ui_connection, "shield"), Triple("battery", R.string.ui_battery, "leaf"),
-                            Triple("recordings", R.string.recordings, "file"), Triple("timing", R.string.timings, "clock"),
-                            Triple("backup", R.string.backup, "file"), Triple("tests", R.string.action_tests, "power"),
-                            Triple("inspector", R.string.inspector_title, "apps"), Triple("diagnostics", R.string.diagnostics, "pulse"), Triple("about", R.string.ui_about, "apps"))
-                        items(pages, key = { it.first }) { (page, title, glyph) ->
-                            val subtitle = when(page) {
-                                "permissions" -> stringResource(config.tier.label())
-                                "battery" -> stringResource(if (batteryExempt) R.string.battery_exempt else R.string.battery_limited)
-                                "recordings" -> stringResource(R.string.ui_recordings_hint)
-                                "timing" -> stringResource(R.string.ui_timing_summary, config.timing.doubleMs, config.timing.longMs)
-                                "backup" -> stringResource(R.string.ui_json_hint)
-                                "tests" -> stringResource(R.string.ui_test_hint)
-                                "inspector" -> stringResource(R.string.inspector_subtitle)
-                                "diagnostics" -> stringResource(R.string.ui_diagnostics_hint)
-                                else -> stringResource(R.string.app_name)
+                            item { TextButton(onClick={refresh++}) { Icon(Icons.Outlined.Refresh,null,modifier=Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(stringResource(R.string.refresh)) } }
+                            item { InfoCard(R.string.ui_plus_help,R.string.root_full_coverage) }
+                            if(!batteryExempt) item { Notice(stringResource(R.string.ui_battery_hint));TextButton(onClick={tab=1;settingsPage="battery"}) {Text(stringResource(R.string.ui_battery))} }
+                        } else when(settingsPage) {
+                            "root" -> {
+                                item { Text(stringResource(R.string.nd_tools_title),style=MaterialTheme.typography.headlineMedium) }
+                                val groups=listOf(
+                                    R.string.nd_setup to listOf(Triple("permissions",R.string.ui_connection,"shield"),Triple("battery",R.string.ui_battery,"leaf"),Triple("timing",R.string.timings,"clock")),
+                                    R.string.nd_data to listOf(Triple("recordings",R.string.recordings,"file"),Triple("backup",R.string.backup,"file")),
+                                    R.string.nd_utilities to listOf(Triple("tests",R.string.action_tests,"power"),Triple("inspector",R.string.inspector_title,"apps"),Triple("diagnostics",R.string.diagnostics,"pulse")),
+                                    R.string.nd_app to listOf(Triple("about",R.string.ui_about,"plus")))
+                                groups.forEach { (heading,pages) ->
+                                    item { SectionTitle(stringResource(heading)) }
+                                    item { OpCard { pages.forEachIndexed { index,(page,title,glyph) ->
+                                        if(index>0) HorizontalDivider(color=OpColors.Border)
+                                        OpRow(stringResource(title),when(page) {
+                                            "permissions" -> stringResource(config.tier.label())
+                                            "battery" -> stringResource(if(batteryExempt) R.string.battery_exempt else R.string.battery_limited)
+                                            "timing" -> stringResource(R.string.ui_timing_summary,config.timing.doubleMs,config.timing.longMs)
+                                            else -> null
+                                        },glyph,OpColors.Muted,onClick={settingsPage=page})
+                                    } } }
+                                }
                             }
-                            OpCard { OpRow(stringResource(title), subtitle, glyph, when(page) { "tests" -> OpColors.Red; "timing" -> OpColors.Amber; "backup" -> OpColors.Purple; else -> OpColors.Mint }, onClick = { settingsPage = page }) }
-                        }
-                    }
                     "permissions" -> {
                         item { OpCard {
-                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Tier.entries.forEach { tier ->
-                                FilterChip(config.tier == tier, onClick = { if (config.tier != tier) { app.store.disable(); app.store.mutate { it.copy(tier = tier, enabled = false) } } }, label = { Text(stringResource(tier.label())) })
-                            } }
+                            Text(stringResource(R.string.nd_mode),style=MaterialTheme.typography.titleMedium)
+                            Tier.entries.forEach { tier ->
+                                Row(Modifier.fillMaxWidth().clickable { if(config.tier!=tier) { app.store.disable();app.store.mutate {it.copy(tier=tier,enabled=false)} } }.heightIn(min=56.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    RadioButton(config.tier==tier,onClick={if(config.tier!=tier) {app.store.disable();app.store.mutate {it.copy(tier=tier,enabled=false)}}})
+                                    Text(stringResource(tier.label()),Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge)
+                                }
+                            }
+                            HorizontalDivider(color=OpColors.Border)
+                            Text(stringResource(R.string.nd_actual_status),style=MaterialTheme.typography.titleMedium)
                             BackendStatus(config.tier, connected, rootConnected, rootState, shizukuConnected, shizukuGranted)
                             if (!config.enabled || emergency) Text(stringResource(R.string.remap_off_after_mode_change), style = MaterialTheme.typography.bodySmall, color = OpColors.Muted)
                             when(config.tier) {
-                                Tier.ROOT -> OutlinedButton(onClick = { app.bridge.retryAuthorization() }) { Icon(Icons.Outlined.Refresh, null); Text(stringResource(R.string.reconnect_backend)) }
+                                Tier.ROOT -> OutlinedButton(onClick = { app.bridge.retryAuthorization() }) { Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.reconnect_backend)) }
                                 Tier.BASIC -> OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text(stringResource(R.string.enable_accessibility)) }
                                 Tier.SHIZUKU -> {
                                     if (shizukuRequesting) Text(stringResource(R.string.shizuku_requesting))
@@ -320,6 +345,8 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                         item { InfoCard(R.string.diagnostics, R.string.diagnostics_redacted) { for(event in events) Text(event, style = MaterialTheme.typography.bodySmall) } }
                     }
                     "about" -> item { OpCard { IconTile("plus", size = 64.dp); SectionTitle(stringResource(R.string.app_name)); Text(dev.opluskeycontrol.BuildConfig.VERSION_NAME, color = OpColors.Muted); Text(stringResource(R.string.ui_about_description)) } }
+                        }
+                    }
                 }
             }
         }
@@ -337,7 +364,7 @@ private fun ruleStatus(rule: Rule, config: Configuration, connected: Boolean, em
     !connected -> R.string.ui_waiting_backend to OpColors.Amber
     rule.schedule?.matches(now) == false -> R.string.ui_outside_schedule to OpColors.Blue
     RuleResolver.resolve(config.rules,rule.trigger,now) != Resolution.Match(rule) -> R.string.ui_not_selected to OpColors.Muted
-    else -> R.string.ui_ready to OpColors.Mint
+    else -> R.string.ui_ready to OpColors.Success
 }
 @Composable private fun PermissionLine(title: Int, glyph: String, granted: Boolean, request: () -> Unit) {
     OpRow(stringResource(title), stringResource(if(granted) R.string.permission_granted else R.string.permission_missing), glyph, if(granted) OpColors.Mint else OpColors.Amber,

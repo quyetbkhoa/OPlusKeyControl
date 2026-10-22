@@ -57,10 +57,10 @@ class ScreenInspector(private val service: AccessibilityService) {
             params.width = minOf(service.resources.displayMetrics.widthPixels - dp(24), dp(360))
             val root = LinearLayout(service).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(6), dp(10), dp(10))
-                background = GradientDrawable().apply { setColor(Color.rgb(18, 26, 29)); cornerRadius = dp(16).toFloat(); setStroke(dp(1), Color.rgb(51, 207, 145)) }
+                background = GradientDrawable().apply { setColor(Color.rgb(24, 28, 34)); cornerRadius = dp(12).toFloat(); setStroke(dp(1), Color.rgb(130, 179, 255)) }
                 elevation = dp(8).toFloat()
             }
-            val heading = TextView(service).apply { setText(R.string.inspector_title); setTextColor(Color.rgb(66, 230, 163)); textSize = 16f; minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL }
+            val heading = TextView(service).apply { setText(R.string.inspector_title); setTextColor(Color.rgb(130, 179, 255)); textSize = 14f; minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL }
             var startX = 0f; var startY = 0f; var originX = 0; var originY = 0
             heading.setOnTouchListener { _, event ->
                 when(event.actionMasked) {
@@ -86,15 +86,15 @@ class ScreenInspector(private val service: AccessibilityService) {
                 }
                 background = android.graphics.drawable.StateListDrawable().apply {
                     addState(intArrayOf(-android.R.attr.state_enabled), surface(Color.rgb(30, 37, 40), Color.rgb(49, 60, 64)))
-                    addState(intArrayOf(android.R.attr.state_pressed), surface(Color.rgb(33, 103, 79), Color.rgb(66, 230, 163)))
-                    addState(intArrayOf(), surface(Color.rgb(24, 62, 49), Color.rgb(45, 143, 105)))
+                    addState(intArrayOf(android.R.attr.state_pressed), surface(Color.rgb(42, 73, 119), Color.rgb(130, 179, 255)))
+                    addState(intArrayOf(), surface(Color.rgb(32, 48, 72), Color.rgb(68, 100, 145)))
                 }
                 setTextColor(android.content.res.ColorStateList(
                     arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
-                    intArrayOf(Color.rgb(143, 157, 163), Color.rgb(231, 255, 244))))
+                    intArrayOf(Color.rgb(143, 157, 163), Color.rgb(235, 242, 255))))
                 setPadding(dp(4), 0, dp(4), 0); setOnClickListener { action() }
                 row.setPadding(0, dp(4), 0, dp(4))
-                row.addView(this, LinearLayout.LayoutParams(0, dp(48), 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
+                row.addView(this, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
             }
             val first = row()
             button(first, R.string.inspector_refresh) { request(manual = true) }

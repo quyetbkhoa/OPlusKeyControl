@@ -45,17 +45,18 @@ import kotlinx.coroutines.withContext
         if (error) Text(stringResource(R.string.scan_failed))
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (!loading && !error && entries.isEmpty()) OpCard { OpRow(stringResource(R.string.ui_empty_recordings), stringResource(R.string.no_recordings), "file", OpColors.Muted) }
-        for ((id, name) in entries) OpCard {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        for ((id, name) in entries) Column {
+            HorizontalDivider(color = OpColors.Border)
+            Row(Modifier.padding(vertical=12.dp),verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 IconTile("file", OpColors.Blue)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                    Text(name, style = MaterialTheme.typography.bodyMedium)
                     StatusChip(name.substringAfterLast('.', "audio").uppercase(), OpColors.Blue)
                 }
                 IconButton(onClick = {
                     val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, context.contentResolver.getType(uri) ?: "audio/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { error = true }
-                }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.select), tint = OpColors.Blue) }
+                }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.nd_play), tint = OpColors.Blue) }
             }
         }
     }

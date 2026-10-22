@@ -1,1 +1,11 @@
-<resources><style name="Theme.OPlusKeyControl" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">true</item></style></resources>
+<resources>
+    <style name="Theme.OPlusKeyControl" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#101216</item>
+        <item name="android:colorAccent">#82B3FF</item>
+        <item name="android:statusBarColor">#101216</item>
+        <item name="android:navigationBarColor">#101216</item>
+    </style>
+</resources>

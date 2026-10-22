@@ -32,42 +32,39 @@ import dev.opluskeycontrol.R
 import dev.opluskeycontrol.domain.ActionKind
 
 object OpColors {
-    val Background = Color(0xFF0C1315)
-    val Surface = Color(0xFF151E21)
-    val Border = Color(0xFF29373D)
-    val Mint = Color(0xFF2EE59D)
-    val Blue = Color(0xFF88BDEB)
-    val Amber = Color(0xFFF6BC44)
-    val Red = Color(0xFFFF6D78)
-    val Purple = Color(0xFFBB95EF)
-    val Muted = Color(0xFFA2B4C5)
+    val Background = Color(0xFF101216)
+    val Surface = Color(0xFF181C22)
+    val Border = Color(0xFF303844)
+    val Accent = Color(0xFF82B3FF)
+    val Mint = Accent // compatibility for UI call sites; primary accent is blue
+    val Success = Color(0xFF86D5B1)
+    val Blue = Color(0xFF82B3FF)
+    val Amber = Color(0xFFE9BD76)
+    val Red = Color(0xFFFF969B)
+    val Purple = Color(0xFFADBFFF)
+    val Muted = Color(0xFFA8B2C1)
 }
 
 @Composable fun OPlusTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = darkColorScheme(
-        primary = OpColors.Mint, onPrimary = OpColors.Background, primaryContainer = Color(0xFF113F30),
+        primary = OpColors.Mint, onPrimary = OpColors.Background, primaryContainer = Color(0xFF20334F),
         onPrimaryContainer = OpColors.Mint, secondary = OpColors.Blue, onSecondary = OpColors.Background,
-        secondaryContainer = Color(0xFF1B2C37), onSecondaryContainer = OpColors.Blue,
-        background = OpColors.Background, onBackground = Color(0xFFF2F6F7),
-        surface = OpColors.Surface, onSurface = Color(0xFFF2F6F7), surfaceVariant = Color(0xFF1E2A30),
+        secondaryContainer = Color(0xFF253042), onSecondaryContainer = OpColors.Blue,
+        background = OpColors.Background, onBackground = Color(0xFFF1F3F7),
+        surface = OpColors.Surface, onSurface = Color(0xFFF1F3F7), surfaceVariant = Color(0xFF222832),
         onSurfaceVariant = OpColors.Muted, outline = OpColors.Border, error = OpColors.Red
     ), typography = Typography(
-        headlineMedium = androidx.compose.ui.text.TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold),
-        titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-        titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+        headlineMedium = androidx.compose.ui.text.TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold),
+        titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+        titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
         bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
         bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
         bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
         labelLarge = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
-    ), shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp)), content = content)
+    ), shapes = Shapes(small = RoundedCornerShape(8.dp), medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(16.dp)), content = content)
 }
 
-fun ActionKind.tint(): Color = when (this) {
-    ActionKind.TORCH_ON, ActionKind.TORCH_OFF, ActionKind.TORCH_TOGGLE -> OpColors.Amber
-    ActionKind.RECORD_TOGGLE -> OpColors.Red
-    ActionKind.STOCK_CAMERA_CAPTURE -> OpColors.Purple
-    else -> OpColors.Blue
-}
+fun ActionKind.tint(): Color = if (this == ActionKind.RECORD_TOGGLE) OpColors.Red else OpColors.Accent
 fun ActionKind.glyph() = when (this) {
     ActionKind.RECORD_TOGGLE -> "mic"
     ActionKind.STOCK_CAMERA_CAPTURE -> "camera"
@@ -103,26 +100,26 @@ fun ActionKind.glyph() = when (this) {
     }
 }
 
-@Composable fun IconTile(glyph: String, tint: Color = OpColors.Mint, size: Dp = 48.dp) {
-    Surface(shape=RoundedCornerShape(14.dp),color=tint.copy(alpha=.12f),modifier=Modifier.size(size)) {
+@Composable fun IconTile(glyph: String, tint: Color = OpColors.Mint, size: Dp = 36.dp) {
+    Surface(shape=RoundedCornerShape(8.dp),color=tint.copy(alpha=.08f),modifier=Modifier.size(size)) {
         Box(contentAlignment=Alignment.Center) { OpGlyph(glyph,tint,size*.52f) }
     }
 }
 @Composable fun OpCard(modifier: Modifier = Modifier, selected: Boolean = false, tint: Color = OpColors.Mint, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier.fillMaxWidth().widthIn(max=720.dp),color=if(selected) tint.copy(alpha=.07f) else OpColors.Surface,
-        shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,if(selected) tint else OpColors.Border)) {
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
+        shape=RoundedCornerShape(12.dp),border=if(selected) BorderStroke(1.dp,tint.copy(alpha=.7f)) else null) {
+        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
     }
 }
 @Composable fun StatusChip(text: String, tint: Color = OpColors.Mint) {
-    Surface(color=tint.copy(alpha=.10f),shape=RoundedCornerShape(50),border=BorderStroke(.7.dp,tint.copy(alpha=.5f))) {
-        Text(text,Modifier.padding(horizontal=10.dp,vertical=5.dp),color=tint,style=MaterialTheme.typography.bodySmall)
+    Surface(color=tint.copy(alpha=.10f),shape=RoundedCornerShape(6.dp)) {
+        Text(text,Modifier.padding(horizontal=8.dp,vertical=4.dp),color=tint,style=MaterialTheme.typography.bodySmall)
     }
 }
-@Composable fun SectionTitle(text: String) { Text(text,style=MaterialTheme.typography.titleLarge,modifier=Modifier.fillMaxWidth().padding(top=8.dp)) }
+@Composable fun SectionTitle(text: String) { Text(text,style=MaterialTheme.typography.titleMedium,color=OpColors.Muted,modifier=Modifier.fillMaxWidth().padding(top=12.dp,bottom=4.dp)) }
 @Composable fun OpRow(title: String, subtitle: String? = null, glyph: String = "file", tint: Color = OpColors.Mint, onClick: (() -> Unit)? = null, trailing: @Composable (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier).padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
-        IconTile(glyph,tint)
+    Row(Modifier.fillMaxWidth().then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier).heightIn(min=56.dp).padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+        OpGlyph(glyph,tint,24.dp)
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Text(title,style=MaterialTheme.typography.titleMedium)
             if(!subtitle.isNullOrBlank()) Text(subtitle,style=MaterialTheme.typography.bodyMedium,color=OpColors.Muted)
@@ -131,7 +128,7 @@ fun ActionKind.glyph() = when (this) {
     }
 }
 @Composable fun OpAppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
-    TopAppBar(title={ Text(title,style=MaterialTheme.typography.titleLarge,maxLines=1,overflow=TextOverflow.Ellipsis) },
+    TopAppBar(title={ Text(title,style=MaterialTheme.typography.titleLarge,maxLines=if(title==stringResource(R.string.app_name)) 1 else 2,overflow=TextOverflow.Ellipsis) },
         navigationIcon={ if(onBack!=null) IconButton(onClick=onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack,stringResource(R.string.back)) } },
         actions=actions,colors=TopAppBarDefaults.topAppBarColors(containerColor=OpColors.Background))
 }
