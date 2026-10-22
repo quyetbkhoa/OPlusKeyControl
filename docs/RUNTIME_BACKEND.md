@@ -1,5 +1,17 @@
 # Experimental runtime backend — not device-accepted
 
+## Current update: individual Plus gestures, MP3 and UI
+
+The user has confirmed physical Plus remapping works in the preceding runtime.
+The 2026-10-22 update removes the three-gesture prerequisite: any current ready
+Plus rule allows ownership. All gestures are recognized to prevent an unassigned
+double/hold firing a mapped single. Unmapped gestures do nothing within an owned
+sequence; OEM pass-through is only possible before ownership. No input replay.
+Power is still excluded: its disabled switch now explains the missing backend.
+See [current implementation and device evidence](UX_MP3_UPDATE.vi.md).
+The complete-coverage requirements and unresolved physical-remapping claims below
+describe earlier revisions and are retained as historical evidence.
+
 ## Latest fix: SELinux-denied socket replaced with Binder
 
 Post-reboot check at 07:01: a fresh root BACKEND_READY broadcast recovered the

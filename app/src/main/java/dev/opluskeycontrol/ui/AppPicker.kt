@@ -2,6 +2,7 @@
 package dev.opluskeycontrol.ui
 
 import android.content.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +14,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.Alignment
 import androidx.core.graphics.drawable.toBitmap
 import dev.opluskeycontrol.R
 import dev.opluskeycontrol.discovery.*
@@ -32,6 +35,7 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
     var error by remember { mutableStateOf(false) }
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    BackHandler { if (selected != null) { selected = null; query = "" } else onClose() }
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() { override fun onReceive(c: Context?, i: Intent?) { revision++ } }
         val filter = IntentFilter().apply { addAction(Intent.ACTION_PACKAGE_ADDED); addAction(Intent.ACTION_PACKAGE_REMOVED); addAction(Intent.ACTION_PACKAGE_CHANGED); addAction(Intent.ACTION_PACKAGE_REPLACED); addDataScheme("package") }
@@ -39,7 +43,7 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
         onDispose { context.unregisterReceiver(receiver) }
     }
     LaunchedEffect(revision) { apps = null; error = false; runCatching { catalog.apps() }.onSuccess { apps = it }.onFailure { error = true }; selected = null; activities = null }
-    LaunchedEffect(selected) { activities = null; selected?.let { app -> runCatching { catalog.activities(app.packageName) }.onSuccess { activities = it }.onFailure { error = true } } }
+    LaunchedEffect(selected) { activities = null; error = false; selected?.let { app -> runCatching { catalog.activities(app.packageName) }.onSuccess { activities = it }.onFailure { error = true; activities = emptyList() } } }
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(if (selected != null) R.string.choose_activity else R.string.choose_app)) }, navigationIcon = { TextButton(onClick = { if (selected != null) { selected = null; query = "" } else onClose() }) { Text(stringResource(R.string.back)) } }, actions = { TextButton(onClick = { revision++ }) { Text(stringResource(R.string.refresh)) } }) }) { padding ->
         Column(Modifier.padding(padding).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.search_apps)) }, singleLine = true)
@@ -47,13 +51,13 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
             else {
                 Text(selected!!.label, style = MaterialTheme.typography.titleLarge)
                 FilterChip(advanced, onClick = { advanced = !advanced }, label = { Text(stringResource(R.string.advanced)) })
-                Notice(stringResource(R.string.activity_identity))
+                if (advanced) Text(stringResource(R.string.activity_identity), style = MaterialTheme.typography.bodySmall)
             }
             if (error) Notice(stringResource(R.string.scan_failed))
             if (apps == null || (selected != null && activities == null)) LinearProgressIndicator(Modifier.fillMaxWidth())
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (selected == null) {
-                    val filtered = apps.orEmpty().filter { (system || !it.system) && it.label.contains(query, true) }
+                    val filtered = apps.orEmpty().filter { (system || !it.system) && (it.label.contains(query, true) || it.packageName.contains(query, true)) }
                     if (apps != null && filtered.isEmpty()) item { Text(stringResource(R.string.no_results)) }
                     items(filtered, key = { it.packageName }) { app ->
                         ListItem(headlineContent = { Text(app.label) }, leadingContent = { AppIcon(catalog, app.packageName) },
@@ -63,21 +67,25 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
                             }) { Text(stringResource(R.string.select)) } })
                     }
                 } else {
-                    val filtered = activities.orEmpty().filter { (advanced || it.status == Launchability.LAUNCHER) && (it.label.contains(query, true) || it.name.contains(query, true)) }
+                    val filtered = activities.orEmpty().filter { (advanced || it.status in setOf(Launchability.LAUNCHER, Launchability.EXPORTED_UNVERIFIED) ||
+                        (it.status == Launchability.INTERNAL && backendConfig.tier == dev.opluskeycontrol.domain.Tier.ROOT)) &&
+                        (it.label.contains(query, true) || it.name.contains(query, true)) }
                     if (activities != null && filtered.isEmpty()) item { Text(stringResource(R.string.no_results)) }
                     items(filtered, key = { it.name }) { activity ->
                         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(activity.label, style = MaterialTheme.typography.titleMedium)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(activity.label, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                TextButton(enabled = activity.status in setOf(Launchability.LAUNCHER, Launchability.EXPORTED_UNVERIFIED) ||
+                                    (activity.status == Launchability.INTERNAL && backendConfig.tier == dev.opluskeycontrol.domain.Tier.ROOT),
+                                    onClick = { onSelect(selected!!, activity.name) }) { Text(stringResource(R.string.select)) }
+                            }
+                            Text(activity.name, style = MaterialTheme.typography.bodySmall, maxLines = if (advanced) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
                             Text(stringResource(activity.status.label()))
                             // Technical details intentionally read-only. No arbitrary intent/shell input.
                             if (advanced) {
-                                Text(activity.name, style = MaterialTheme.typography.bodySmall)
                                 Text(stringResource(R.string.exported_value, activity.exported.toString()))
                                 Text(stringResource(R.string.current_profile_only), style = MaterialTheme.typography.bodySmall)
                             }
-                            Button(enabled = activity.status in setOf(Launchability.LAUNCHER, Launchability.EXPORTED_UNVERIFIED) ||
-                                (activity.status == Launchability.INTERNAL && backendConfig.tier == dev.opluskeycontrol.domain.Tier.ROOT),
-                                onClick = { onSelect(selected!!, activity.name) }) { Text(stringResource(R.string.select)) }
                         } }
                     }
                 }

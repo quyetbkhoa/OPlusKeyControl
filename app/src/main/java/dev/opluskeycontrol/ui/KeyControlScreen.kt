@@ -4,6 +4,7 @@ package dev.opluskeycontrol.ui
 import android.app.TimePickerDialog
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,6 +45,8 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     val emergency by app.store.emergency.collectAsStateWithLifecycle()
     val connected by BasicInputService.connected.collectAsStateWithLifecycle()
     val rootConnected by dev.opluskeycontrol.input.PolicyBridge.connected.collectAsStateWithLifecycle()
+    val rootState by app.bridge.authorizationState.collectAsStateWithLifecycle()
+    val permissionRevision by app.permissionRevision.collectAsStateWithLifecycle()
     val events by BasicInputService.events.collectAsStateWithLifecycle()
     val message by app.actions.message.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -52,6 +55,30 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     var editing by remember { mutableStateOf<Rule?>(null) }
     var editor by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
+    var shizukuRevision by remember { mutableIntStateOf(0) }
+    var shizukuRequesting by remember { mutableStateOf(false) }
+    var shizukuDenied by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        val received = rikka.shizuku.Shizuku.OnBinderReceivedListener { scope.launch { shizukuRevision++ } }
+        val died = rikka.shizuku.Shizuku.OnBinderDeadListener { scope.launch { shizukuRevision++ } }
+        val result = rikka.shizuku.Shizuku.OnRequestPermissionResultListener { _, grant -> scope.launch {
+            shizukuRequesting = false; shizukuDenied = grant != android.content.pm.PackageManager.PERMISSION_GRANTED; shizukuRevision++
+        } }
+        rikka.shizuku.Shizuku.addBinderReceivedListenerSticky(received)
+        rikka.shizuku.Shizuku.addBinderDeadListener(died)
+        rikka.shizuku.Shizuku.addRequestPermissionResultListener(result)
+        onDispose {
+            rikka.shizuku.Shizuku.removeBinderReceivedListener(received)
+            rikka.shizuku.Shizuku.removeBinderDeadListener(died)
+            rikka.shizuku.Shizuku.removeRequestPermissionResultListener(result)
+        }
+    }
+    val shizukuConnected = remember(refresh, shizukuRevision) { Capabilities.shizukuConnected() }
+    val shizukuGranted = remember(refresh, shizukuRevision) { Capabilities.shizukuGranted() }
+    val batteryExempt = remember(refresh) { context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName) }
+    val cameraGranted = remember(refresh, permissionRevision) { Capabilities.permission(context, android.Manifest.permission.CAMERA) }
+    val micGranted = remember(refresh, permissionRevision) { Capabilities.permission(context, android.Manifest.permission.RECORD_AUDIO) }
+    val notificationsGranted = remember(refresh, permissionRevision) { Build.VERSION.SDK_INT < 33 || Capabilities.permission(context, android.Manifest.permission.POST_NOTIFICATIONS) }
     val overviewScroll = rememberLazyListState()
     val mappingsScroll = rememberLazyListState()
     val settingsScroll = rememberLazyListState()
@@ -95,18 +122,8 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                             Switch(checked = config.enabled && !emergency, onCheckedChange = app.store::setEnabled)
                         }
                         Text(stringResource(config.tier.label()), style = MaterialTheme.typography.labelLarge)
-                        Text(stringResource(if (connected) R.string.accessibility_connected else R.string.accessibility_disconnected))
-                        if (config.tier == Tier.ROOT) {
-                            Text(stringResource(if (rootConnected) R.string.root_connected else R.string.root_disconnected))
-                            Text(stringResource(R.string.root_full_coverage))
-                        }
-                    } }
-                    item { InfoCard(R.string.capabilities, R.string.no_verified_oem_backend) {
-                        for (button in Button.entries) {
-                            val trigger = Trigger(button, if (button == Button.POWER) Gesture.DOUBLE else Gesture.SINGLE)
-                            Text(stringResource(button.label()), style = MaterialTheme.typography.titleSmall)
-                            Text(stringResource(Capabilities.trigger(context, config.tier, trigger).reason))
-                        }
+                        BackendStatus(config.tier, connected, rootConnected, rootState, shizukuConnected, shizukuGranted)
+                        if (!batteryExempt) Text(stringResource(R.string.battery_limited), color = MaterialTheme.colorScheme.error)
                     } }
                     item { Text(stringResource(R.string.now_preview), style = MaterialTheme.typography.titleLarge) }
                     if (config.rules.isEmpty()) item { Notice(stringResource(R.string.no_rules)) }
@@ -120,7 +137,6 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                                 resolved is Resolution.Conflict -> stringResource(R.string.conflict)
                                 else -> stringResource(R.string.pass_through)
                             })
-                            Text(stringResource(R.string.preview_logical), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     item { TextButton(onClick = { refresh++ }) { Text(stringResource(R.string.refresh_preview)) } }
@@ -133,8 +149,9 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                             Text(triggerTitle(rule.trigger), style = MaterialTheme.typography.titleMedium)
                             Text(stringResource(rule.action.kind.label()))
                             ScheduleText(rule.schedule)
-                            Text(stringResource(R.string.priority_value, rule.priority))
-                            Text(stringResource(Capabilities.trigger(context, config.tier, rule.trigger).reason), style = MaterialTheme.typography.bodySmall)
+                            if (rule.priority != 0) Text(stringResource(R.string.priority_value, rule.priority))
+                            if (!Capabilities.configurableTrigger(config.tier, rule.trigger))
+                                Text(stringResource(Capabilities.trigger(context, config.tier, rule.trigger).reason), style = MaterialTheme.typography.bodySmall)
                             if (Capabilities.action(context, rule.action).status != Support.SUPPORTED) {
                                 Text(stringResource(Capabilities.action(context, rule.action).reason), style = MaterialTheme.typography.bodySmall)
                             }
@@ -150,16 +167,38 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                     item { Text(stringResource(R.string.settings), style = MaterialTheme.typography.headlineMedium) }
                     item(key = "backend") { InfoCard(R.string.backend, R.string.backend_explanation) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Tier.entries.forEach { tier ->
-                            FilterChip(selected = config.tier == tier, onClick = { app.store.disable(); app.store.mutate { it.copy(tier = tier, enabled = false) } }, label = { Text(stringResource(tier.label())) })
+                            FilterChip(selected = config.tier == tier, onClick = { if (config.tier != tier) { app.store.disable(); app.store.mutate { it.copy(tier = tier, enabled = false) } } }, label = { Text(stringResource(tier.label())) })
                         } }
-                        Text(stringResource(when(config.tier) { Tier.BASIC -> R.string.basic_limitation; Tier.SHIZUKU -> R.string.shizuku_limitation; Tier.ROOT -> R.string.root_limitation }))
-                        Text(stringResource(if (Capabilities.shizukuGranted()) R.string.shizuku_granted else if (Capabilities.shizukuConnected()) R.string.shizuku_running else R.string.shizuku_missing))
-                        OutlinedButton(onClick = { Capabilities.requestShizuku(); refresh++ }, enabled = Capabilities.shizukuConnected()) { Text(stringResource(R.string.request_shizuku)) }
+                        BackendStatus(config.tier, connected, rootConnected, rootState, shizukuConnected, shizukuGranted)
+                        if (!config.enabled || emergency) Text(stringResource(R.string.remap_off_after_mode_change), style = MaterialTheme.typography.bodySmall)
+                        when (config.tier) {
+                            Tier.SHIZUKU -> {
+                                if (shizukuRequesting) Text(stringResource(R.string.shizuku_requesting))
+                                else if (shizukuDenied && !shizukuGranted) Text(stringResource(R.string.shizuku_denied), color = MaterialTheme.colorScheme.error)
+                                OutlinedButton(onClick = { shizukuRequesting = Capabilities.requestShizuku(); shizukuDenied = !shizukuRequesting; refresh++ }, enabled = shizukuConnected && !shizukuGranted && !shizukuRequesting) { Text(stringResource(R.string.request_shizuku)) }
+                            }
+                            Tier.ROOT -> OutlinedButton(onClick = { app.bridge.retryAuthorization() }) { Text(stringResource(R.string.reconnect_backend)) }
+                            Tier.BASIC -> OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text(stringResource(R.string.enable_accessibility)) }
+                        }
                     } }
                     item(key = "permissions") { InfoCard(R.string.permissions, R.string.permissions_description) {
+                        Text(stringResource(R.string.permission_status,
+                            stringResource(if (cameraGranted) R.string.permission_granted else R.string.permission_missing),
+                            stringResource(if (micGranted) R.string.permission_granted else R.string.permission_missing),
+                            stringResource(if (notificationsGranted) R.string.permission_granted else R.string.permission_missing)))
                         Button(onClick = onPermissions) { Text(stringResource(R.string.grant_permissions)) }
                         OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text(stringResource(R.string.enable_accessibility)) }
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + context.packageName))) }) { Text(stringResource(R.string.app_settings)) }
+                    } }
+                    item(key = "battery") { InfoCard(R.string.battery_title, R.string.battery_help) {
+                        Text(stringResource(if (batteryExempt) R.string.battery_exempt else R.string.battery_limited))
+                        if (!batteryExempt) OutlinedButton(onClick = {
+                            runCatching { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                android.net.Uri.parse("package:" + context.packageName))) }
+                                .onFailure { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                        }) { Text(stringResource(R.string.battery_allow)) }
+                        TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:" + context.packageName))) }) { Text(stringResource(R.string.battery_app_settings)) }
                     } }
                     item(key = "manual-actions") { InfoCard(R.string.action_tests, R.string.tests_description) {
                         Button(onClick = { scope.launch { app.actions.execute(Action(ActionKind.TORCH_TOGGLE), true) } }) { Text(stringResource(R.string.torch_toggle)) }
@@ -201,9 +240,13 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
 }
 @Composable fun Notice(text: String) { Surface(Modifier.fillMaxWidth().widthIn(max = 720.dp), color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) { Text(text, Modifier.padding(16.dp)) } }
 @Composable fun InfoCard(title: Int, detail: Int, content: @Composable ColumnScope.() -> Unit = {}) {
+    var expanded by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth().widthIn(max = 720.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(title), style = MaterialTheme.typography.titleLarge)
-        Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(title), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = { expanded = !expanded }) { Icon(Icons.Outlined.Info, stringResource(R.string.show_details)) }
+        }
+        if (expanded) Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium)
         content()
     } }
 }

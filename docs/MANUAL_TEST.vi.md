@@ -1,5 +1,19 @@
 # Tự kiểm tra OPlusKeyControl — 2026-10-22
 
+## Bản cập nhật hiện tại
+
+Xem [kết quả sửa MP3/UI](UX_MP3_UPDATE.vi.md). Người dùng đã xác nhận bản runtime
+trước hoạt động. Bản mới cho phép từng gesture Plus độc lập, không cần đủ ba rule.
+Sau reboot, bật công tắc chính rồi thử nhấn đơn với riêng rule đèn pin nếu muốn;
+không cần bật rule ghi âm hoặc mở app để đủ coverage. Giữ nguyên các rule đã tắt.
+Gesture chưa gán không chạy gì trong chuỗi phím app đã chiếm. Power chưa hỗ trợ.
+Các yêu cầu đủ ba gesture và lịch DOUBLE trong những mục bên dưới là lịch sử.
+
+MP3: người dùng chủ động thử ghi âm và dừng, kiểm tra file mới trong
+Music/OPlusKeyControl bằng trình phát; bản ghi M4A cũ vẫn được giữ và phát đúng MIME.
+Kiểm tra khi màn hình bật/tắt; quyền pin Android và thiết lập ColorOS cần phân biệt.
+Không coi test tín hiệu tổng hợp hoặc cài APK là chứng minh microphone nền hoạt động.
+
 ## Kiểm tra sau reboot bản Binder — 07:01
 
 TCP kết nối. Ban đầu UI chưa kết nối; gửi lại BACKEND_READY bằng ADB root

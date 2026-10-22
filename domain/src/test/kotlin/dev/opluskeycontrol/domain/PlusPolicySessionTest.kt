@@ -15,7 +15,7 @@ class PlusPolicySessionTest {
     private fun PlusPolicySession.event(at: Long, edge: Edge, down: Long = 100, device: Int = 1, repeat: Int = 0) =
         accept(PolicyEvent(device, down, at, edge, repeat), at, local)
     @Test fun noSessionPasses() { assertFalse(PlusPolicySession().event(100, Edge.DOWN).consume) }
-    @Test fun partialMappingNeverOwnsDown() { assertFalse(session(rules.dropLast(1)).event(100, Edge.DOWN).consume) }
+    @Test fun partialMappingOwnsDown() { assertTrue(session(rules.dropLast(1)).event(100, Edge.DOWN).consume) }
     @Test fun expiredSessionNeverOwnsDown() { assertFalse(session(expiry = 100).event(100, Edge.DOWN).consume) }
     @Test fun singleWaitsThenRunsOnce() {
         val s = session(); assertTrue(s.event(100, Edge.DOWN).consume); assertTrue(s.event(150, Edge.UP).consume)
@@ -53,19 +53,20 @@ class PlusPolicySessionTest {
         assertFalse(session(rules + chord).event(100, Edge.DOWN).consume)
     }
     @Test fun unmatchedUpIsNeverConsumed() { assertFalse(session().event(150, Edge.UP).consume) }
-    @Test fun unavailableActionPreventsAllRawOwnership() {
+    @Test fun unavailableActionDoesNotBlockOtherGestures() {
         val unavailable = rules.map { if (it.trigger.gesture == Gesture.LONG) it.copy(action = Action(ActionKind.RECORD_TOGGLE)) else it }
-        assertFalse(session(unavailable).event(100, Edge.DOWN).consume)
+        assertTrue(session(unavailable).event(100, Edge.DOWN).consume)
     }
-    @Test fun disabledGestureDoesNotCountAsCoverage() {
-        assertFalse(session(rules.map { if (it.trigger.gesture == Gesture.LONG) it.copy(enabled = false) else it }).event(100, Edge.DOWN).consume)
+    @Test fun disabledGestureDoesNotBlockOtherGestures() {
+        assertTrue(session(rules.map { if (it.trigger.gesture == Gesture.LONG) it.copy(enabled = false) else it }).event(100, Edge.DOWN).consume)
     }
     @Test fun scheduleWithoutCurrentMatchPreventsOwnership() {
         val night = rules.map { it.copy(schedule = Schedule(22 * 60, 6 * 60)) }
         assertFalse(session(night).event(100, Edge.DOWN).consume)
     }
     @Test fun conflictingRulesFailOpenWithoutSelectingOne() {
-        assertFalse(session(rules + rules[0].copy(id = "duplicate-priority")).event(100, Edge.DOWN).consume)
+        val s = session(listOf(rules[0], rules[0].copy(id = "duplicate-priority")))
+        assertFalse(s.event(100, Edge.DOWN).consume)
     }
     @Test fun repeatDoesNotCreateDoubleOrExtraLong() {
         val s = session(); s.event(100, Edge.DOWN); assertTrue(s.event(200, Edge.DOWN, repeat = 1).actions.isEmpty())
@@ -90,5 +91,34 @@ class PlusPolicySessionTest {
         assertTrue(s.event(2000, Edge.DOWN, 2000).consume)
         s.event(2050, Edge.UP, 2000)
         assertEquals("SINGLE", s.advance(2350, local).single().rule.id)
+    }
+
+    @Test fun eachGestureWorksIndependently() {
+        for (rule in rules) {
+            val s = session(listOf(rule))
+            assertTrue(s.event(100, Edge.DOWN).consume)
+            val actions = when (rule.trigger.gesture) {
+                Gesture.LONG -> s.advance(700, local).also { s.event(800, Edge.UP) }
+                Gesture.DOUBLE -> { s.event(150, Edge.UP); s.event(250, Edge.DOWN, 250); s.event(300, Edge.UP, 250).actions }
+                else -> { s.event(150, Edge.UP); s.advance(450, local) }
+            }
+            assertEquals(rule.id, actions.single().rule.id)
+            assertTrue(s.advance(2000, local).isEmpty())
+        }
+    }
+    @Test fun unmappedDoubleAndHoldNeverFallBackToSingle() {
+        val s = session(listOf(rules[0]))
+        s.event(100, Edge.DOWN); s.event(150, Edge.UP); s.event(250, Edge.DOWN, 250)
+        assertTrue(s.event(300, Edge.UP, 250).actions.isEmpty())
+        assertTrue(s.advance(1000, local).isEmpty())
+        s.event(1500, Edge.DOWN, 1500)
+        assertTrue(s.advance(2100, local).isEmpty())
+        assertTrue(s.event(2200, Edge.UP, 1500).actions.isEmpty())
+        assertTrue(s.advance(3000, local).isEmpty())
+    }
+    @Test fun noReadyOrEnabledRulesPassThrough() {
+        assertFalse(session(emptyList()).event(100, Edge.DOWN).consume)
+        assertFalse(session(rules.map { it.copy(enabled = false) }).event(100, Edge.DOWN).consume)
+        assertFalse(session(rules.map { it.copy(action = Action(ActionKind.RECORD_TOGGLE)) }).event(100, Edge.DOWN).consume)
     }
 }

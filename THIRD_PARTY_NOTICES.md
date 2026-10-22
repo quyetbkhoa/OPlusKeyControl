@@ -11,6 +11,13 @@ OPlusKeyControl original source is licensed under Apache-2.0.
 | Gradle wrapper | Apache-2.0; https://github.com/gradle/gradle |
 | JUnit 4 (test only) | EPL-1.0; https://github.com/junit-team/junit4 |
 | JSON-java (JVM test only) | Public domain; https://github.com/stleary/JSON-java |
+| Jump3r 1.0.5 (MP3 encoder, unmodified dependency) | LGPL-2.1-or-later; https://git.iem.at/sciss/jump3r ; https://repo.maven.apache.org/maven2/de/sciss/jump3r/1.0.5/jump3r-1.0.5-sources.jar |
+
+Jump3r is linked as an unmodified Maven dependency. Its LGPL license is supplied
+in `licenses/Jump3r-LGPL-2.1.txt`. The exact corresponding source archive is linked
+above; the build pins version 1.0.5. Rebuilding this source project permits replacing
+the dependency, including with a modified version. No `javax.sound` wrapper is used
+by the Android recorder; `Mp3Encoder` calls the Java encoder core directly.
 
 Distribution must retain upstream notices supplied by dependency AAR/JAR files.
 This is a direct-dependency inventory, not a completed transitive release SBOM.

@@ -1,11 +1,11 @@
 # OPlusKeyControl
 
 Ứng dụng Android Kotlin/Compose tùy biến nút theo lịch, đang phát triển cho
-OnePlus 15 / Android 16. **Bản 0.1.0-dev chưa remap nút thật.**
+OnePlus 15 / Android 16. Người dùng đã xác nhận bản runtime remap Plus hoạt động.
 Không phải bản nghiệm thu đầy đủ theo [yêu cầu](docs/IMPLEMENTATION_BRIEF.vi.md).
 Đã [bắt được Plus thật](docs/POLICY_PROBE.md): keyCode 780 / scanCode 735.
 Có [backend runtime thử nghiệm riêng](docs/RUNTIME_BACKEND.md) đã nối app/hook,
-gesture, lịch và actions; **đã cài runtime để kiểm tra UI, chưa nghiệm thu remap**.
+gesture, lịch và actions; chưa nghiệm thu đủ mọi tình huống.
 Không bật tự động. Xem [hướng dẫn tự test](docs/MANUAL_TEST.vi.md).
 [English](README.en.md) · [Khảo sát thiết bị](docs/DEVICE_DISCOVERY.md) ·
 [Ma trận nghiệm thu](docs/ACCEPTANCE.md) · [Recovery](docs/RECOVERY.md).
@@ -21,7 +21,7 @@ Không bật tự động. Xem [hướng dẫn tự test](docs/MANUAL_TEST.vi.md
 - DataStore JSON schema v1, kiểm tra dữ liệu nhập, khôi phục mặc định tắt.
 - Quét app và activity từng package trên IO; icon tải theo hàng hiển thị,
   tìm tên, lọc hệ thống/advanced, làm mới khi package thay đổi.
-- Action thủ công thật: đèn pin CameraManager, mở launcher, ghi âm AAC/m4a
+- Action thủ công thật: đèn pin CameraManager, mở launcher, ghi âm MP3 thật
   từ UI hiển thị với microphone FGS/thông báo Stop, tự dừng; lịch sử 50 bản.
 - Accessibility chỉ quan sát Volume, luôn `return false`; không đọc màn hình.
 - Phát hiện binder/quyền Shizuku thật; `su -c id` chỉ khi chủ động chọn Root.
@@ -29,17 +29,17 @@ Không bật tự động. Xem [hướng dẫn tự test](docs/MANUAL_TEST.vi.md
   scope chỉ `dev.opluskeycontrol` trong bản thường. Probe thật đã chạy dưới Vector
   API 102. Bản `-PopcRuntime=true` dùng system/self scope và cần duyệt thử riêng.
 
-Candidate runtime có local socket xác thực UID, snapshot cấu hình, thu hồi scope
+Candidate runtime có Binder xác thực UID, snapshot cấu hình, thu hồi scope
 bằng FileObserver trong root child có lifetime pipe, queue giới hạn và one-shot
-gesture deadlines. Chỉ nhận Plus khi đủ rule nhấn đơn/đúp/giữ và actions sẵn sàng;
-thiếu một gesture thì toàn bộ Plus cho ColorOS xử lý. Activity root và camera tự
+gesture deadlines. Nhận Plus khi có ít nhất một rule đang áp dụng và sẵn sàng;
+trong chuỗi phím đã chiếm, kiểu nhấn chưa gán không làm gì. Activity root và camera tự
 chụp có bước thử thủ công trước khi đánh dấu sẵn sàng. Đường yêu cầu ghi âm từ
 system_server đã có nhưng chưa chứng minh chạy nền được trên ROM.
 
 ## Chưa hỗ trợ trong bản này
 
-Chưa nghiệm thu Plus replacement trên máy thật; gán riêng từng gesture Plus,
-Power/Volume replacement, capture qua Shizuku, chord, screen-off/deep-sleep,
+Gán riêng từng gesture Plus đã có code/test, cần reboot để nạp hook mới và test thật.
+Chưa hỗ trợ Power/Volume replacement, capture qua Shizuku, chord; screen-off/deep-sleep,
 camera shutter, activity nội bộ, ghi âm nền/khóa và multi-profile.
 Bản thường vẫn chỉ lưu các mapping chưa hỗ trợ dưới dạng tắt. Không tự thay bằng camera riêng, inject
 Volume làm shutter, giả UID/chữ ký, hoặc chiếm cả input device.

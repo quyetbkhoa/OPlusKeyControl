@@ -22,14 +22,19 @@ class AppCatalog(private val context: Context) {
         @Suppress("DEPRECATION")
         val info = pm.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES or PackageManager.MATCH_DISABLED_COMPONENTS)
         info.activities.orEmpty().map { a ->
-            ActivityEntry(packageName, a.name, a.loadLabel(pm).toString(), when {
+            ActivityEntry(packageName, a.name, a.loadLabel(pm).toString().ifBlank { a.name.substringAfterLast('.') }, when {
                 !a.enabled || !a.applicationInfo.enabled -> Launchability.DISABLED
                 !a.exported -> Launchability.INTERNAL
                 !a.permission.isNullOrBlank() -> Launchability.PROTECTED
                 launcher == ComponentName(packageName, a.name) -> Launchability.LAUNCHER
                 else -> Launchability.EXPORTED_UNVERIFIED
             }, a.exported, a.permission)
-        }.sortedBy { it.label.lowercase() }
+        }.sortedWith(compareBy<ActivityEntry> { when (it.status) {
+            Launchability.LAUNCHER -> 0
+            Launchability.EXPORTED_UNVERIFIED -> 1
+            Launchability.INTERNAL -> 2
+            else -> 3
+        } }.thenBy { it.label.lowercase() })
     }
     suspend fun icon(packageName: String): Drawable? = withContext(Dispatchers.IO) { runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull() }
 }

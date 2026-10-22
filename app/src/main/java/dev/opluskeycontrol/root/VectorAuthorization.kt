@@ -5,18 +5,26 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+enum class RootAuthorizationState { INACTIVE, CHECKING, AUTHORIZED, UNAVAILABLE }
+
 /** Event-driven root scope watcher. No installed daemon/script. Its stdin pipe is
  * a lifetime token: app death/uninstall closes it and ScopeWatchMain exits.
  * Invalidate BEFORE re-reading scope, including an unreadable database/framework.
  */
 class VectorAuthorization(private val scope: CoroutineScope, private val apkPath: String) {
     val allowed = MutableStateFlow(false)
+    val state = MutableStateFlow(RootAuthorizationState.INACTIVE)
+    private fun checked(value: Boolean) {
+        allowed.value = value
+        state.value = if (value) RootAuthorizationState.AUTHORIZED else RootAuthorizationState.UNAVAILABLE
+    }
     private var job: Job? = null
     @Volatile private var process: Process? = null
     private val epoch = java.util.concurrent.atomic.AtomicLong()
     fun start() {
         if (job?.isActive == true) return
         val token = epoch.incrementAndGet()
+        state.value = RootAuthorizationState.CHECKING
         job = scope.launch(Dispatchers.IO) {
             var ownedProcess: Process? = null
             try {
@@ -36,11 +44,12 @@ class VectorAuthorization(private val scope: CoroutineScope, private val apkPath
                         if (line == "READY") { ready = true; break }
                     }
                     if (!ready) return@use
-                    if (epoch.get() == token) allowed.value = check()
+                    if (epoch.get() == token) checked(check())
                     while (isActive) {
                         val line = lines.readLine() ?: break
                         if (epoch.get() != token) break
                         allowed.value = false
+                        state.value = RootAuthorizationState.CHECKING
                         if (line != "CHANGED") continue
                         // A bounded debounce only after filesystem activity, never an idle timer.
                         delay(150)
@@ -48,12 +57,12 @@ class VectorAuthorization(private val scope: CoroutineScope, private val apkPath
                         while (lines.ready() && drained++ < 128) {
                             if (lines.readLine() != "CHANGED") break
                         }
-                        if (epoch.get() == token) allowed.value = check()
+                        if (epoch.get() == token) checked(check())
                     }
                 }
             } catch (_: Exception) { if (epoch.get() == token) allowed.value = false }
             finally {
-                if (epoch.get() == token) allowed.value = false
+                if (epoch.get() == token) checked(false)
                 if (process === ownedProcess) process = null
                 ownedProcess?.let { closeProcess(it) }
             }
@@ -74,6 +83,7 @@ class VectorAuthorization(private val scope: CoroutineScope, private val apkPath
     }.getOrDefault(false)
     fun stop() {
         epoch.incrementAndGet(); allowed.value = false; job?.cancel(); job = null
+        state.value = RootAuthorizationState.INACTIVE
         val p = process; process = null; p?.let { closeProcess(it) }
     }
     private fun closeProcess(p: Process) {

@@ -28,11 +28,12 @@ object Capabilities {
     }
     fun shizukuConnected() = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
     fun shizukuGranted() = runCatching { shizukuConnected() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)
-    fun requestShizuku() { if (shizukuConnected()) runCatching { Shizuku.requestPermission(10) } }
+    fun requestShizuku(): Boolean = shizukuConnected() && runCatching { Shizuku.requestPermission(10) }.isSuccess
     fun permission(context: Context, name: String) = ContextCompat.checkSelfPermission(context, name) == PackageManager.PERMISSION_GRANTED
     fun trigger(context: Context, tier: Tier, trigger: Trigger): Capability {
         if (tier == Tier.SHIZUKU) return Capability(Support.VERIFY, R.string.shizuku_limitation)
         if (tier == Tier.ROOT) return when {
+            trigger.button == Button.POWER -> Capability(Support.UNSUPPORTED, R.string.power_backend_missing)
             trigger.button == Button.PLUS && trigger.gesture != Gesture.CHORD && BuildConfig.POLICY_RUNTIME && PolicyBridge.connected.value -> Capability(Support.SUPPORTED, R.string.root_full_coverage)
             configurableTrigger(tier, trigger) -> Capability(Support.VERIFY, R.string.root_disconnected)
             else -> Capability(Support.VERIFY, R.string.root_limitation)

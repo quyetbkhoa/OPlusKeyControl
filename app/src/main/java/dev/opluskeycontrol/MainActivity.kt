@@ -19,7 +19,10 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as KeyControlApp
-    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        app.permissionRevision.value++
+        app.bridge.refresh()
+    }
     private val export = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) app.scope.launch {
             val data = RuleCodec.encode(app.store.config.value)

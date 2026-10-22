@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.icons)
     implementation(libs.datastore)
     implementation(libs.coroutines)
+    implementation("de.sciss:jump3r:1.0.5")
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     compileOnly(libs.libxposed.api)

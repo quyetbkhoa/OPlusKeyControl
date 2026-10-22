@@ -3,6 +3,8 @@ package dev.opluskeycontrol.actions
 import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioFormat
+import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.*
@@ -22,15 +24,19 @@ class RecorderService : Service() {
         val error = MutableStateFlow(false)
         val origin = MutableStateFlow<dev.opluskeycontrol.domain.Trigger?>(null)
     }
-    private var recorder: MediaRecorder? = null
-    private var uri: Uri? = null
-    private var descriptor: ParcelFileDescriptor? = null
+    @Volatile private var stopRequested = false
+    @Volatile private var destroyed = false
+    private var worker: Thread? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val autoStop = Runnable { finishRecording() }
+    private val autoStop = Runnable { stopRequested = true }
     override fun onBind(intent: Intent?) = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP) { finishRecording(); return START_NOT_STICKY }
-        if (intent?.action == TOGGLE && recorder != null) { finishRecording(); return START_NOT_STICKY }
+        if (intent?.action == STOP || (intent?.action == TOGGLE && worker != null)) {
+            stopRequested = true
+            if (worker == null) stopSelf()
+            return START_NOT_STICKY
+        }
+        if (worker != null) return START_NOT_STICKY
         if (intent?.hasExtra("originGesture") == true) {
             val app = application as dev.opluskeycontrol.KeyControlApp
             val c = app.store.config.value
@@ -41,8 +47,8 @@ class RecorderService : Service() {
                 rule !is dev.opluskeycontrol.domain.Resolution.Match || rule.rule.action.kind != dev.opluskeycontrol.domain.ActionKind.RECORD_TOGGLE ||
                 rule.rule.id != intent.getStringExtra("originRule")) { stopSelf(); return START_NOT_STICKY }
         }
-        if (recorder != null) return START_NOT_STICKY
         error.value = false
+        stopRequested = false
         try {
             val channel = "recording"
             getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(channel, getString(R.string.recording), NotificationManager.IMPORTANCE_LOW))
@@ -53,50 +59,85 @@ class RecorderService : Service() {
                 .setContentIntent(open).setOngoing(true).addAction(android.R.drawable.ic_media_pause, getString(R.string.stop), stop).build()
             if (Build.VERSION.SDK_INT >= 30) startForeground(20, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             else startForeground(20, notification)
-            val name = "OPlusKeyControl_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS")) + ".m4a"
-            if (Build.VERSION.SDK_INT >= 29) {
-                val values = android.content.ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, name); put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
-                    put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/OPlusKeyControl"); put(MediaStore.Audio.Media.IS_PENDING, 1)
-                }
-                uri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values) ?: error("storage")
-                descriptor = contentResolver.openFileDescriptor(uri!!, "w") ?: error("storage")
-            } else {
-                val file = java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC), name)
-                descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_WRITE_ONLY)
-            }
-            val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else @Suppress("DEPRECATION") MediaRecorder()
-            recorder = r
-            r.setAudioSource(MediaRecorder.AudioSource.MIC); r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC); r.setAudioEncodingBitRate(128000); r.setAudioSamplingRate(44100)
-            r.setOutputFile(descriptor!!.fileDescriptor)
-            r.setOnErrorListener { _, _, _ -> error.value = true; finishRecording() }
-            r.prepare(); r.start(); recording.value = true
             origin.value = intent?.getStringExtra("originGesture")?.let { name -> runCatching {
                 dev.opluskeycontrol.domain.Trigger(dev.opluskeycontrol.domain.Button.PLUS, dev.opluskeycontrol.domain.Gesture.valueOf(name))
             }.getOrNull() }
+            recording.value = true
             handler.postDelayed(autoStop, intent?.getIntExtra("seconds", 300)?.coerceIn(10, 7200)?.times(1000L) ?: 300000L)
-        } catch (_: Exception) { error.value = true; discard(); stopSelf() }
+            worker = Thread({ captureMp3() }, "OPlusKeyControl-MP3").also { it.start() }
+        } catch (_: Exception) {
+            error.value = true; recording.value = false; origin.value = null
+            handler.removeCallbacks(autoStop); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+        }
         return START_NOT_STICKY
     }
-    private fun discard() {
-        runCatching { recorder?.reset(); recorder?.release() }; recorder = null
-        runCatching { descriptor?.close() }; descriptor = null
-        uri?.let { runCatching { contentResolver.delete(it, null, null) } }; uri = null
-        recording.value = false; origin.value = null; handler.removeCallbacks(autoStop)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+
+    /** Capture, encoding and storage stay off the main/UI thread; memory is bounded. */
+    @Suppress("MissingPermission")
+    private fun captureMp3() {
+        var target: Uri? = null
+        var legacy: java.io.File? = null
+        var input: AudioRecord? = null
+        var complete = false
+        try {
+            val name = "OPlusKeyControl_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS")) + ".mp3"
+            val output = if (Build.VERSION.SDK_INT >= 29) {
+                target = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, android.content.ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, name); put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+                    put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/OPlusKeyControl"); put(MediaStore.Audio.Media.IS_PENDING, 1)
+                }) ?: error("storage")
+                contentResolver.openOutputStream(target, "w") ?: error("storage")
+            } else {
+                legacy = java.io.File(getExternalFilesDir(Environment.DIRECTORY_MUSIC), name)
+                legacy.outputStream()
+            }
+            output.buffered().use { stream ->
+                Mp3Encoder().use { encoder ->
+                    val minimum = AudioRecord.getMinBufferSize(44100, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                    require(minimum > 0)
+                    val audio = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
+                        .setAudioFormat(AudioFormat.Builder().setSampleRate(44100).setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                        .setBufferSizeInBytes(maxOf(minimum * 2, 16384)).build()
+                    input = audio
+                    check(audio.state == AudioRecord.STATE_INITIALIZED)
+                    audio.startRecording()
+                    check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING)
+                    val pcm = ShortArray(4096)
+                    val mp3 = ByteArray(16384)
+                    var samples = 0L
+                    val deadline = SystemClock.elapsedRealtime() + 7200000L
+                    while (!stopRequested && SystemClock.elapsedRealtime() < deadline) {
+                        val count = audio.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
+                        check(count > 0) { "Microphone read failed: $count" }
+                        stream.write(mp3, 0, encoder.encode(pcm, count, mp3))
+                        samples += count
+                    }
+                    check(samples > 0) { "Empty recording" }
+                    stream.write(mp3, 0, encoder.finish(mp3))
+                }
+            }
+            if (Build.VERSION.SDK_INT >= 29) check(contentResolver.update(requireNotNull(target), android.content.ContentValues().apply {
+                put(MediaStore.Audio.Media.IS_PENDING, 0)
+            }, null, null) == 1)
+            complete = true
+        } catch (_: Exception) { error.value = true }
+        finally {
+            runCatching { input?.stop() }; runCatching { input?.release() }
+            if (!complete) {
+                target?.let { runCatching { contentResolver.delete(it, null, null) } }
+                legacy?.let { runCatching { it.delete() } }
+            }
+            handler.post {
+                handler.removeCallbacks(autoStop)
+                worker = null; recording.value = false; origin.value = null
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (!destroyed) stopSelf()
+            }
+        }
     }
-    private fun finishRecording() {
-        handler.removeCallbacks(autoStop)
-        val stopped = runCatching { recorder?.stop() }.isSuccess
-        runCatching { recorder?.release() }; recorder = null
-        runCatching { descriptor?.close() }; descriptor = null
-        uri?.let { target -> runCatching {
-            if (stopped && Build.VERSION.SDK_INT >= 29) contentResolver.update(target, android.content.ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
-            else contentResolver.delete(target, null, null)
-        }.onFailure { error.value = true } }
-        if (!stopped) error.value = true
-        uri = null; recording.value = false; origin.value = null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+    override fun onDestroy() {
+        destroyed = true; stopRequested = true; handler.removeCallbacks(autoStop)
+        super.onDestroy()
     }
-    override fun onDestroy() { if (recorder != null) finishRecording(); super.onDestroy() }
 }

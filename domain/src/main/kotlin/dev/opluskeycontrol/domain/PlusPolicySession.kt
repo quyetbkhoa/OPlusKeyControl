@@ -5,9 +5,10 @@ import java.time.ZonedDateTime
 data class PolicyEvent(val deviceId: Int, val downTime: Long, val time: Long, val edge: Edge, val repeat: Int = 0)
 data class PolicyOutcome(val consume: Boolean, val actions: List<PolicyDecision.Replace> = emptyList())
 
-/** Raw Plus interception is safe to start only with a complete SINGLE/DOUBLE/LONG
- * mapping for the current time. Partial mappings need a verified semantic OEM adapter;
- * replaying raw events or guessing which gesture the user will finish is forbidden.
+/** Owns a Plus sequence whenever at least one current gesture is ready.
+ * All three gestures are still recognized so an unmapped hold/double never becomes
+ * a mapped single. Unmapped gestures in an owned sequence do nothing; raw events
+ * cannot be restored to the OEM after the sequence has already been consumed.
  * Each caller serializes events/deadlines/configuration. Power/volume never enter here.
  */
 class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = Tier.ROOT) {
@@ -46,8 +47,8 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         if (event.edge == Edge.CANCEL) { cancelGesture(); return PolicyOutcome(false) }
         if (device != null && device != event.deviceId) return PolicyOutcome(false)
         if (event.edge == Edge.DOWN && !ownedDown) {
-            val complete = connected && triggers.all { gate.decide(it, firmware, now, local) is PolicyDecision.Replace }
-            if (!complete || event.repeat != 0) { engine.reset(); return PolicyOutcome(false) }
+            val active = connected && triggers.any { gate.decide(it, firmware, now, local) is PolicyDecision.Replace }
+            if (!active || event.repeat != 0) { engine.reset(); return PolicyOutcome(false) }
             ownedDown = true; device = event.deviceId
         }
         if (!ownedDown) return PolicyOutcome(false)

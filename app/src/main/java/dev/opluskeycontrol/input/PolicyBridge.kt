@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicLong
 class PolicyBridge(private val app: KeyControlApp) {
     companion object { val connected = MutableStateFlow(false) }
     private val authorization = VectorAuthorization(app.scope, app.applicationInfo.sourceDir)
+    val authorizationState = authorization.state.asStateFlow()
     private val generation = AtomicLong()
     @Volatile private var available = false
     private var peer: IBinder? = null
@@ -105,8 +106,9 @@ class PolicyBridge(private val app: KeyControlApp) {
                 .combine(app.actions.torchReady) { state, _ -> state }
                 .combine(app.actions.busy) { state, _ -> state }
                 .collectLatest { (config, emergency, allowed) ->
-                if (config.tier != Tier.ROOT || emergency) { withContext(Dispatchers.IO) { authorization.stop(); close() }; return@collectLatest }
+                if (config.tier != Tier.ROOT) { withContext(Dispatchers.IO) { authorization.stop(); close() }; return@collectLatest }
                 authorization.start()
+                if (emergency) { withContext(Dispatchers.IO) { close() }; return@collectLatest }
                 if (!allowed) { withContext(Dispatchers.IO) { close() }; return@collectLatest }
                 withContext(Dispatchers.IO) {
                     if (!available) open()
@@ -127,6 +129,10 @@ class PolicyBridge(private val app: KeyControlApp) {
             publish()
         }
     } }
+    fun retryAuthorization() {
+        if (!BuildConfig.POLICY_RUNTIME || app.store.config.value.tier != Tier.ROOT) return
+        app.scope.launch(Dispatchers.IO) { authorization.stop(); close(); authorization.start() }
+    }
     private fun publish() {
         synchronized(lock) {
             val target = peer ?: return

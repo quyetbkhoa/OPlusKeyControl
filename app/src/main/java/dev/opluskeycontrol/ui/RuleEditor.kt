@@ -32,6 +32,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
     val backendConnected by dev.opluskeycontrol.input.PolicyBridge.connected.collectAsState()
     var confirmTest by remember { mutableStateOf(false) }
     var step by remember { mutableIntStateOf(0) }
+    var details by remember { mutableStateOf(false) }
     var button by remember { mutableStateOf(original?.trigger?.button ?: Button.PLUS) }
     var gesture by remember { mutableStateOf(original?.trigger?.gesture ?: Gesture.DOUBLE) }
     var partner by remember { mutableStateOf(original?.trigger?.partner ?: Button.VOLUME_UP) }
@@ -97,9 +98,9 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                             FilterChip(partner == candidate, onClick = { partner = candidate }, label = { Text(stringResource(candidate.label())) })
                         } }
                     }
-                    Notice(stringResource(R.string.power_safety))
+                    if (button == Button.POWER) Text(stringResource(R.string.power_safety), style = MaterialTheme.typography.bodySmall)
                     if (trigger == null) Notice(stringResource(R.string.reserved_chord))
-                    triggerCapability?.let { Notice(stringResource(it.reason)) }
+                    if (triggerCapability?.status != Support.SUPPORTED) triggerCapability?.let { Notice(stringResource(it.reason)) }
                 }
                 1 -> {
                     Row { Checkbox(scheduled, { scheduled = it }); Text(stringResource(R.string.use_schedule), Modifier.padding(top = 12.dp)) }
@@ -111,27 +112,28 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { DayOfWeek.entries.forEach { day ->
                             FilterChip(day in days, onClick = { days = if (day in days) days - day else days + day }, label = { Text(day.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())) })
                         } }
-                        Notice(stringResource(R.string.schedule_explanation))
                         if (schedule == null) Notice(stringResource(R.string.invalid_schedule)) else ScheduleText(schedule)
-                    } else Text(stringResource(R.string.default_rule_hint))
-                    Text(stringResource(R.string.priority_value, priority.toInt()))
-                    Slider(priority, { priority = it }, valueRange = 0f..100f, steps = 19)
+                    }
+                    TextButton(onClick = { details = !details }) { Text(stringResource(R.string.advanced)) }
+                    if (details || priority != 0f) {
+                        Text(stringResource(R.string.priority_value, priority.toInt()))
+                        Slider(priority, { priority = it }, valueRange = 0f..100f, steps = 19)
+                    }
                 }
                 2 -> {
                     ActionKind.entries.forEach { candidate ->
                         Row { RadioButton(kind == candidate, onClick = { kind = candidate; activity = null }); TextButton(onClick = { kind = candidate; activity = null }) { Text(stringResource(candidate.label())) } }
                     }
                     if (kind in setOf(ActionKind.APP, ActionKind.ACTIVITY)) {
-                        Button(onClick = { picker = true }) { Text(stringResource(R.string.choose_app)) }
+                        Button(onClick = { picker = true }) { Text(stringResource(if (kind == ActionKind.ACTIVITY) R.string.choose_activity else R.string.choose_app)) }
                         target?.let { Text(it.label) }
-                        if (kind == ActionKind.ACTIVITY) Notice(stringResource(R.string.activity_unverified))
+                        if (kind == ActionKind.ACTIVITY) activity?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
                     if (kind == ActionKind.RECORD_TOGGLE) {
                         Text(stringResource(R.string.autostop_seconds, duration.toInt()))
                         Slider(duration, { duration = it }, valueRange = 10f..3600f)
-                        Notice(stringResource(R.string.recorder_visible))
                     }
-                    actionCapability?.let { Notice(stringResource(it.reason)) }
+                    if (actionCapability?.status != Support.SUPPORTED) actionCapability?.let { Notice(stringResource(it.reason)) }
                 }
                 3 -> {
                     trigger?.let { Text(triggerTitle(it), style = MaterialTheme.typography.titleLarge) }
@@ -140,14 +142,17 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                     ScheduleText(schedule)
                     Text(stringResource(R.string.priority_value, priority.toInt()))
                     if (conflict) Notice(stringResource(R.string.conflict))
-                    if (!canEnable) Notice(stringResource(R.string.save_disabled_hint))
-                    Row { Switch(enabled, { enabled = it }, enabled = canEnable); Text(stringResource(R.string.enable_rule), Modifier.padding(start = 12.dp, top = 12.dp)) }
+                    if (!canEnable) {
+                        triggerCapability?.takeIf { it.status != Support.SUPPORTED && !Capabilities.configurableTrigger(config.tier, requireNotNull(trigger)) }?.let { Notice(stringResource(it.reason)) }
+                        actionCapability?.takeIf { it.status != Support.SUPPORTED }?.let { Notice(stringResource(it.reason)) }
+                    }
+                    Row { Switch(enabled, { enabled = it }, enabled = canEnable || enabled); Text(stringResource(R.string.enable_rule), Modifier.padding(start = 12.dp, top = 12.dp)) }
                     rule?.let { candidate ->
                         val resolved = RuleResolver.resolve(config.rules.filterNot { it.id == id } + candidate.copy(enabled = true), candidate.trigger, ZonedDateTime.now())
                         Text(stringResource(R.string.now_preview), style = MaterialTheme.typography.titleMedium)
                         Text(if (resolved is Resolution.Match) stringResource(resolved.rule.action.kind.label()) else stringResource(R.string.pass_through))
                     }
-                    Notice(stringResource(R.string.preview_logical))
+                    if (button == Button.PLUS) Text(stringResource(R.string.root_full_coverage), style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(enabled = actionCapability?.status == Support.SUPPORTED || (config.tier == Tier.ROOT && kind in setOf(ActionKind.ACTIVITY, ActionKind.STOCK_CAMERA_CAPTURE)), onClick = { confirmTest = true }) { Text(stringResource(R.string.test_action)) }
                     actionMessage?.let { Text(stringResource(it)) }
                 }

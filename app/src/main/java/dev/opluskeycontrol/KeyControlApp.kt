@@ -17,6 +17,7 @@ class KeyControlApp : Application() {
     val actions by lazy { ActionExecutor(this) }
     val bridge by lazy { PolicyBridge(this) }
     val visible = MutableStateFlow(false)
+    val permissionRevision = MutableStateFlow(0)
     override fun onCreate() {
         super.onCreate(); store; bridge.start()
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
