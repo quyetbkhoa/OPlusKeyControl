@@ -103,7 +103,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
     val openAppSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + context.packageName))) }
     val titles = mapOf("permissions" to R.string.ui_connection, "battery" to R.string.ui_battery, "recordings" to R.string.recordings,
         "timing" to R.string.timings, "backup" to R.string.backup, "tests" to R.string.action_tests,
-        "diagnostics" to R.string.diagnostics, "about" to R.string.ui_about)
+        "inspector" to R.string.inspector_title, "diagnostics" to R.string.diagnostics, "about" to R.string.ui_about)
     if (editor) {
         RuleEditor(config, editing, onClose = { editor = false }, onSave = { rule ->
             app.store.mutate { it.copy(rules = it.rules.filterNot { old -> old.id == rule.id } + rule) }; editor = false
@@ -228,7 +228,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                             Triple("permissions", R.string.ui_connection, "shield"), Triple("battery", R.string.ui_battery, "leaf"),
                             Triple("recordings", R.string.recordings, "file"), Triple("timing", R.string.timings, "clock"),
                             Triple("backup", R.string.backup, "file"), Triple("tests", R.string.action_tests, "power"),
-                            Triple("diagnostics", R.string.diagnostics, "pulse"), Triple("about", R.string.ui_about, "apps"))
+                            Triple("inspector", R.string.inspector_title, "apps"), Triple("diagnostics", R.string.diagnostics, "pulse"), Triple("about", R.string.ui_about, "apps"))
                         items(pages, key = { it.first }) { (page, title, glyph) ->
                             val subtitle = when(page) {
                                 "permissions" -> stringResource(config.tier.label())
@@ -237,6 +237,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                                 "timing" -> stringResource(R.string.ui_timing_summary, config.timing.doubleMs, config.timing.longMs)
                                 "backup" -> stringResource(R.string.ui_json_hint)
                                 "tests" -> stringResource(R.string.ui_test_hint)
+                                "inspector" -> stringResource(R.string.inspector_subtitle)
                                 "diagnostics" -> stringResource(R.string.ui_diagnostics_hint)
                                 else -> stringResource(R.string.app_name)
                             }
@@ -297,6 +298,17 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                         item { OpCard { OpRow(stringResource(R.string.recorder_toggle), glyph = "mic", tint = OpColors.Red); Button(onClick = { scope.launch { app.actions.execute(Action(ActionKind.RECORD_TOGGLE), true) } }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.recorder_toggle)) } } }
                         item { OpCard { OpRow(stringResource(R.string.open_camera_only), glyph = "camera", tint = OpColors.Purple); OutlinedButton(onClick = { if (!app.actions.openStockCamera()) app.actions.message.value = R.string.camera_unavailable }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.ui_open_camera)) } } }
                     }
+                    "inspector" -> item { OpCard {
+                        OpRow(stringResource(R.string.inspector_title), stringResource(R.string.inspector_help), "apps", OpColors.Mint)
+                        Text(stringResource(if(connected) R.string.inspector_access_ready else R.string.inspector_access_needed), color = if(connected) OpColors.Mint else OpColors.Amber)
+                        Button(enabled = connected, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), onClick = {
+                            if (!BasicInputService.showInspector()) app.actions.message.value = R.string.inspector_start_failed
+                        }) { Text(stringResource(R.string.inspector_open)) }
+                        OutlinedButton(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), onClick = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }) { Text(stringResource(R.string.inspector_access_settings)) }
+                        Text(stringResource(R.string.inspector_storage), style = MaterialTheme.typography.bodySmall, color = OpColors.Muted)
+                    } }
                     "diagnostics" -> {
                         item { OpCard { OpRow(stringResource(R.string.ui_device_info), glyph = "pulse", tint = OpColors.Blue); Text(stringResource(R.string.firmware, Build.MODEL, Build.VERSION.RELEASE, Build.VERSION.SDK_INT, Build.DISPLAY)) } }
                         item { OpCard {
@@ -304,6 +316,7 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                             OutlinedButton(enabled = config.tier == Tier.ROOT, onClick = { scope.launch { rootIdentity = withContext(Dispatchers.IO) { dev.opluskeycontrol.root.RootIdentity.probe() } } }) { Text(stringResource(R.string.probe_root)) }
                             rootIdentity?.let { Text(it) }
                         } }
+                        item { Text("Backend features: $backendFeatures", style = MaterialTheme.typography.bodySmall) }
                         item { InfoCard(R.string.diagnostics, R.string.diagnostics_redacted) { for(event in events) Text(event, style = MaterialTheme.typography.bodySmall) } }
                     }
                     "about" -> item { OpCard { IconTile("plus", size = 64.dp); SectionTitle(stringResource(R.string.app_name)); Text(dev.opluskeycontrol.BuildConfig.VERSION_NAME, color = OpColors.Muted); Text(stringResource(R.string.ui_about_description)) } }

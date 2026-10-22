@@ -153,7 +153,7 @@ class PolicyBridge(private val app: KeyControlApp) {
                     if (app.actions.busy.value) return@filter false
                     when (kind) {
                         ActionKind.TORCH_TOGGLE, ActionKind.TORCH_ON, ActionKind.TORCH_OFF -> app.actions.torchReady.value && Capabilities.permission(app, android.Manifest.permission.CAMERA)
-                        ActionKind.STOCK_CAMERA_CAPTURE -> dev.opluskeycontrol.actions.ActionProofs.verified(app, Action(kind))
+                        ActionKind.STOCK_CAMERA_CAPTURE -> true
                         ActionKind.ACTIVITY -> c.rules.filter { it.enabled && it.action.kind == kind }.all { dev.opluskeycontrol.actions.ActionProofs.verified(app, it.action) }
                         ActionKind.RECORD_TOGGLE -> RecorderService.recording.value || (!RecorderService.error.value && Capabilities.permission(app, android.Manifest.permission.RECORD_AUDIO) &&
                             Capabilities.permission(app, android.Manifest.permission.POST_NOTIFICATIONS))

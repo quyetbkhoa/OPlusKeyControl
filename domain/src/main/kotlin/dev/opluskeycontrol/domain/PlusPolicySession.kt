@@ -9,13 +9,13 @@ data class PolicyOutcome(val consume: Boolean, val actions: List<PolicyDecision.
  * All three gestures are still recognized so an unmapped hold/double never becomes
  * a mapped single. Unmapped gestures in an owned sequence do nothing; raw events
  * cannot be restored to the OEM after the sequence has already been consumed.
- * Each caller serializes events/deadlines/configuration. Power/volume never enter here.
+ * Each caller serializes events/deadlines/configuration; only verified partners enter here.
  */
 class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = Tier.ROOT, private val plusVolumeChords: Boolean = false) {
     init { require(button != Button.POWER) }
     private val triggers = setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG).map { Trigger(button, it) }.toSet()
     private val chordTriggers = if (plusVolumeChords && button == Button.PLUS)
-        setOf(Trigger(Button.PLUS, Gesture.CHORD, Button.VOLUME_UP), Trigger(Button.PLUS, Gesture.CHORD, Button.VOLUME_DOWN)) else emptySet()
+        setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER).map { Trigger(Button.PLUS, Gesture.CHORD, it) }.toSet() else emptySet()
     private val allTriggers = triggers + chordTriggers
     private val gate = PolicyGate(setOf(button), tier, plusVolumeChords = plusVolumeChords)
     private var firmware = ""
@@ -24,6 +24,10 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     private var ownedDown = false
     private var draining = false
     private var connected = false
+    private var deferredLong = false
+    private var chordCommitted = false
+    private var plusDownAt = 0L
+    private var longThreshold = 600L
     private val decisions = LinkedHashMap<PolicyEvent, Boolean>()
     private data class PartnerPress(val deviceId: Int, val downTime: Long)
     private val partners = mutableMapOf<Button, PartnerPress>()
@@ -31,17 +35,19 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
 
     fun configure(configuration: PolicyConfiguration, timing: Timing, proof: PolicyProof, lease: BackendLease) {
         engine = GestureEngine(allTriggers, timing)
+        longThreshold = timing.longMs
+        deferredLong = false; chordCommitted = false
         draining = ownedDown
         if (!ownedDown) device = null
         firmware = proof.firmware
         // Chords cannot be partially owned at the raw Plus boundary.
         gate.configure(if (configuration.rules.any { it.enabled && it.trigger.gesture == Gesture.CHORD &&
-            button in setOf(it.trigger.button, it.trigger.partner) && (!plusVolumeChords || !it.trigger.isPlusVolumeChord()) }) configuration.copy(enabled = false) else configuration)
+            button in setOf(it.trigger.button, it.trigger.partner) && (!plusVolumeChords || !it.trigger.isPlusChord()) }) configuration.copy(enabled = false) else configuration)
         gate.verify(proof); gate.attach(lease); connected = true
     }
 
-    fun disconnect() { connected = false; gate.disconnect(); engine.reset(); draining = ownedDown }
-    fun cancelGesture() { engine.reset(); draining = ownedDown } // paired UP closes an owned DOWN
+    fun disconnect() { deferredLong = false; connected = false; gate.disconnect(); engine.reset(); draining = ownedDown }
+    fun cancelGesture() { deferredLong = false; engine.reset(); draining = ownedDown } // paired UP closes an owned DOWN
     fun nextDeadline(): Long? = if (connected) engine.nextDeadline() else null
 
     private fun resolve(candidates: List<Trigger>, now: Long, local: ZonedDateTime) = candidates.mapNotNull {
@@ -60,14 +66,18 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
             val active = connected && allTriggers.any { gate.decide(it, firmware, now, local) is PolicyDecision.Replace }
             if (!active || event.repeat != 0) { engine.reset(); return PolicyOutcome(false) }
             val chordReady = chordTriggers.any { gate.decide(it, firmware, now, local) is PolicyDecision.Replace }
-            // An unmapped hold can remain a modifier. A mapped long action still wins
-            // once committed; releasing a long modifier must never run a short click.
-            engine.allowLongRecognition(button, !chordReady || gate.decide(Trigger(button, Gesture.LONG), firmware, now, local) is PolicyDecision.Replace)
+            // Active chords reserve the modifier until release; mapped LONG is deferred
+            // to release so it cannot steal a slower physical chord.
+            deferredLong = chordReady
+            chordCommitted = false; plusDownAt = event.time
+            engine.allowLongRecognition(button, !chordReady)
             ownedDown = true; device = event.deviceId
         }
         if (!ownedDown) return PolicyOutcome(false)
-        val actions = if (connected && !draining) resolve(engine.accept(ButtonEvent("owned-input", event.deviceId, button,
-            event.edge, event.time, event.repeat)), now, local) else emptyList()
+        val actions = (if (connected && !draining) resolve(engine.accept(ButtonEvent("owned-input", event.deviceId, button,
+            event.edge, event.time, event.repeat)), now, local) else emptyList()) +
+            if (event.edge == Edge.UP && connected && !draining && deferredLong && !chordCommitted && event.time - plusDownAt >= longThreshold)
+                resolve(listOf(Trigger(button, Gesture.LONG)), now, local) else emptyList()
         if (event.edge == Edge.UP) { ownedDown = false; draining = false; if (engine.nextDeadline() == null) device = null }
         decisions[event] = true
         while (decisions.size > 32) decisions.remove(decisions.keys.first())
@@ -78,7 +88,7 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
      * An earlier standalone Volume DOWN is never swallowed or replayed.
      */
     fun acceptPartner(partner: Button, event: PolicyEvent, now: Long, local: ZonedDateTime): PolicyOutcome {
-        if (partner !in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN)) return PolicyOutcome(false)
+        if (partner !in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER)) return PolicyOutcome(false)
         val key = partner to event
         partnerDecisions[key]?.let { return PolicyOutcome(it) }
         val tracked = partners[partner]
@@ -103,6 +113,7 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         // The IMS adapter verifies each physical driver before reaching this logical session.
         val candidates = engine.accept(ButtonEvent("owned-input", device!!, partner, Edge.DOWN, event.time))
         if (candidates.none { it.sameAs(chord) }) { cancelGesture(); return PolicyOutcome(false, due) }
+        chordCommitted = true
         partners[partner] = PartnerPress(event.deviceId, event.downTime)
         rememberPartner(key)
         return PolicyOutcome(true, due + resolve(candidates, now, local))

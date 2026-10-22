@@ -69,10 +69,8 @@ class ActionExecutor(private val context: Context) {
                     }
                 }
                 ActionKind.STOCK_CAMERA_CAPTURE -> {
-                    if (!rootAuthorized || (!visibleActivity && !ActionProofs.verified(context, action))) { message.value = R.string.camera_unverified; return }
-                    val success = StockCameraCapture(context).capture()
-                    message.value = if (success) R.string.photo_confirmed else R.string.action_failed
-                    if (success && visibleActivity) ActionProofs.record(context, action)
+                    val success = if (rootAuthorized) openStockCameraRoot() else openStockCamera()
+                    message.value = if (success) R.string.launch_requested else R.string.camera_unavailable
                 }
                 ActionKind.RECORD_TOGGLE -> {
                     if (RecorderService.recording.value) context.startService(Intent(context, RecorderService::class.java).setAction(RecorderService.STOP))
@@ -83,6 +81,21 @@ class ActionExecutor(private val context: Context) {
             }
         } catch (_: Exception) { message.value = R.string.action_failed }
         finally { mutex.unlock(); busy.value = false }
+    }
+    private suspend fun openStockCameraRoot(): Boolean {
+        val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        val action = if (locked) MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE else MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
+        val candidates = context.packageManager.queryIntentActivities(Intent(action), 0).filter {
+            it.activityInfo.exported && (it.activityInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+        }
+        val info = candidates.singleOrNull()?.activityInfo ?: return false
+        val component = ComponentName(info.packageName, info.name).flattenToString()
+        if (!component.matches(Regex("[A-Za-z0-9_./$]+"))) return false
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val user = android.os.Process.myUid() / 100000
+            val result = dev.opluskeycontrol.root.RootCommands.run("am start --user $user -a '$action' -n '$component'", 5)
+            result != null && !result.contains("Error") && !result.contains("Exception")
+        }
     }
     /** Separate, honestly labelled preview: no shutter is fired or claimed. */
     fun openStockCamera(): Boolean = runCatching {

@@ -10,6 +10,8 @@ Không bật tự động. Xem [hướng dẫn tự test](docs/MANUAL_TEST.vi.md
 [English](README.en.md) · [Khảo sát thiết bị](docs/DEVICE_DISCOVERY.md) ·
 [Ma trận nghiệm thu](docs/ACCEPTANCE.md) · [Recovery](docs/RECOVERY.md).
 
+Xem [bản sửa tổ hợp, mở camera và Inspector](docs/INPUT_FIXES_AND_INSPECTOR.vi.md) cho candidate mới nhất.
+
 ## Đã triển khai
 
 - Giao diện dark Compose Material 3, tiếng Việt mặc định và tiếng Anh.

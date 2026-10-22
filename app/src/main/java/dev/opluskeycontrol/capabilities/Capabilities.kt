@@ -20,10 +20,11 @@ object Capabilities {
     fun configurableTrigger(tier: Tier, trigger: Trigger): Boolean =
         BuildConfig.POLICY_RUNTIME && tier == Tier.ROOT &&
             ((trigger.button == Button.PLUS && trigger.gesture in setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG)) ||
-                (BuildConfig.ADVANCED_INPUTS && (trigger == Trigger(Button.POWER, Gesture.DOUBLE) || trigger.isPlusVolumeChord())))
+                (BuildConfig.ADVANCED_INPUTS && (trigger == Trigger(Button.POWER, Gesture.DOUBLE) || trigger.isPlusChord() || trigger.isPowerVolumeChord())))
     fun featureFor(trigger: Trigger): Int = when {
         trigger == Trigger(Button.POWER, Gesture.DOUBLE) -> dev.opluskeycontrol.input.PolicyBinder.POWER_DOUBLE
-        trigger.isPlusVolumeChord() -> dev.opluskeycontrol.input.PolicyBinder.PLUS_VOLUME
+        trigger.isPlusChord() -> dev.opluskeycontrol.input.PolicyBinder.PLUS_VOLUME
+        trigger.isPowerVolumeChord() -> dev.opluskeycontrol.input.PolicyBinder.POWER_VOLUME
         else -> dev.opluskeycontrol.input.PolicyBinder.PLUS
     }
     fun accessibility(context: Context): Boolean {
@@ -40,7 +41,7 @@ object Capabilities {
         if (tier == Tier.SHIZUKU) return Capability(Support.VERIFY, R.string.shizuku_limitation)
         if (tier == Tier.ROOT) return when {
             configurableTrigger(tier, trigger) && PolicyBridge.connected.value && PolicyBridge.features.value and featureFor(trigger) != 0 ->
-                Capability(Support.SUPPORTED, if (trigger.button == Button.POWER) R.string.power_double_experimental else if (trigger.isPlusVolumeChord()) R.string.chord_plus_first else R.string.root_full_coverage)
+                Capability(Support.SUPPORTED, if (trigger.gesture == Gesture.CHORD) R.string.chord_plus_first else if (trigger.button == Button.POWER) R.string.power_double_experimental else R.string.root_full_coverage)
             configurableTrigger(tier, trigger) && PolicyBridge.connected.value -> Capability(Support.VERIFY, R.string.advanced_backend_missing)
             configurableTrigger(tier, trigger) -> Capability(Support.VERIFY, R.string.root_disconnected)
             trigger.button == Button.POWER -> Capability(Support.UNSUPPORTED, R.string.power_backend_missing)
@@ -53,7 +54,7 @@ object Capabilities {
         return Capability(Support.VERIFY, R.string.basic_limitation)
     }
     fun action(context: Context, action: Action): Capability = when {
-        action.kind in setOf(ActionKind.STOCK_CAMERA_CAPTURE, ActionKind.ACTIVITY) -> if (ActionProofs.verified(context, action))
+        action.kind == ActionKind.ACTIVITY -> if (ActionProofs.verified(context, action))
             Capability(Support.SUPPORTED, R.string.action_available) else Capability(Support.VERIFY, if (action.kind == ActionKind.ACTIVITY) R.string.activity_unverified else R.string.camera_unverified)
         action.kind in setOf(ActionKind.TORCH_ON, ActionKind.TORCH_OFF, ActionKind.TORCH_TOGGLE) && !permission(context, Manifest.permission.CAMERA) -> Capability(Support.PERMISSION, R.string.camera_permission)
         action.kind == ActionKind.RECORD_TOGGLE -> if (BuildConfig.POLICY_RUNTIME && (context.applicationContext as? KeyControlApp)?.store?.config?.value?.tier == Tier.ROOT &&

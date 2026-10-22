@@ -33,7 +33,10 @@ class RuleTest {
     }
     @Test(expected = IllegalArgumentException::class) fun noPowerSingle() { Trigger(Button.POWER, Gesture.SINGLE) }
     @Test(expected = IllegalArgumentException::class) fun noPowerLong() { Trigger(Button.POWER, Gesture.LONG) }
-    @Test(expected = IllegalArgumentException::class) fun reservePowerChords() { Trigger(Button.PLUS, Gesture.CHORD, Button.POWER) }
+    @Test fun powerChordsCanBeConfigured() {
+        assertTrue(Trigger(Button.PLUS, Gesture.CHORD, Button.POWER).isPlusChord())
+        assertTrue(Trigger(Button.POWER, Gesture.CHORD, Button.VOLUME_UP).isPowerVolumeChord())
+    }
     @Test(expected = IllegalArgumentException::class) fun reserveBothVolumeChord() { Trigger(Button.VOLUME_UP, Gesture.CHORD, Button.VOLUME_DOWN) }
     @Test(expected = IllegalArgumentException::class) fun noSelfChord() { Trigger(Button.PLUS, Gesture.CHORD, Button.PLUS) }
     @Test(expected = IllegalArgumentException::class) fun noShellComponents() { Action(ActionKind.APP, "pkg; id") }

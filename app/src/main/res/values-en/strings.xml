@@ -32,7 +32,7 @@
     <string name="torch_off">Flashlight off</string>
     <string name="open_app">Open app</string>
     <string name="open_activity">Open app activity (Root)</string>
-    <string name="stock_camera">Stock camera: open and capture</string>
+    <string name="stock_camera">Open stock camera</string>
     <string name="recorder_toggle">Start / stop recording</string>
     <string name="your_buttons">Button control</string>
     <string name="overview_description">Time-based mappings. No button is remapped by default.</string>
@@ -63,7 +63,7 @@
     <string name="grant_permissions">Grant action permissions</string>
     <string name="enable_accessibility">Open Accessibility settings</string>
     <string name="app_settings">App info / battery</string>
-    <string name="accessibility_description">Observe volume keys for diagnostics. No screen content access. This development build does not replace system gestures.</string>
+    <string name="accessibility_description">Observe volume keys. When you open Activity / UI inspector, read the UI tree to display and save TXT on request. Does not click or control apps.</string>
     <string name="accessibility_connected">Accessibility service connected</string>
     <string name="accessibility_disconnected">Accessibility service disconnected</string>
     <string name="action_tests">Manual action tests</string>
@@ -116,7 +116,7 @@
     <string name="choose_action">Choose an action</string>
     <string name="review_rule">Review and save</string>
     <string name="second_button">Second button</string>
-    <string name="power_safety">Power single/long remain with the system. Power chords and both-volume chords are reserved.</string>
+    <string name="power_safety">Power single/hold remain with the system. Ready Power + Volume rules replace the native chord action.</string>
     <string name="reserved_chord">This chord is reserved or invalid.</string>
     <string name="use_schedule">Use a time window</string>
     <string name="start_time">Start %1$s</string>
@@ -224,7 +224,29 @@
     <string name="ui_cancel_changes">Discard changes?</string>
     <string name="ui_camera_trial">Test before enabling</string>
     <string name="power_double_experimental">Power double press · experimental. Single waits for the system multipress window; holds and emergency handling remain in OEM policy.</string>
-    <string name="chord_plus_first">Hold Plus, then press Volume+ or Volume− before the hold action fires. Volume-first order is not supported.</string>
+    <string name="chord_plus_first">With Plus: hold Plus first, then press the other key. With a chord rule, Plus hold fires on release. Power + Volume: press within 150 ms, in either order.</string>
     <string name="advanced_backend_missing">This hook is not ready in the current backend.</string>
     <string name="ui_configurable">Configurable</string>
+    <string name="inspector_title">Activity / UI inspector</string>
+    <string name="inspector_subtitle">Floating window · Save UI tree as TXT</string>
+    <string name="inspector_help">Inspect the current Activity and UI tree, including Settings. Reads only while this overlay is open.</string>
+    <string name="inspector_access_ready">Accessibility connected</string>
+    <string name="inspector_access_needed">Enable OPlusKeyControl accessibility. After an update, you may need to toggle it off and on.</string>
+    <string name="inspector_open">Open inspector</string>
+    <string name="inspector_access_settings">Accessibility settings</string>
+    <string name="inspector_storage">TXT files go to Download/OPlusKeyControl (Android 10+). Password fields are hidden. Only Save TXT writes a file; protected screens may not expose a UI tree.</string>
+    <string name="inspector_loading">Reading screen…</string>
+    <string name="inspector_refresh">Refresh</string>
+    <string name="inspector_save">Save TXT</string>
+    <string name="inspector_pause">Pause</string>
+    <string name="inspector_resume">Resume</string>
+    <string name="inspector_collapse">Collapse</string>
+    <string name="inspector_expand">Expand tree</string>
+    <string name="inspector_close">Close</string>
+    <string name="inspector_drag">Drag to move the window</string>
+    <string name="inspector_empty">UI tree unavailable. Try Refresh or re-enable accessibility.</string>
+    <string name="inspector_captured">Current UI tree · Pause to keep the snapshot</string>
+    <string name="inspector_saved">Saved</string>
+    <string name="inspector_save_failed">Could not save TXT. Try again.</string>
+    <string name="inspector_start_failed">Could not open inspector. Try re-enabling accessibility.</string>
 </resources>

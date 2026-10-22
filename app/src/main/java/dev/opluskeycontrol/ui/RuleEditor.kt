@@ -112,18 +112,18 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                     }
                     SectionTitle(stringResource(R.string.ui_choose_gesture))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        (if (button == Button.POWER) listOf(Gesture.DOUBLE) else Gesture.entries).forEach { candidate ->
+                        (if (button == Button.POWER) listOf(Gesture.DOUBLE, Gesture.CHORD) else Gesture.entries).forEach { candidate ->
                             FilterChip(gesture == candidate, onClick = { gesture = candidate }, label = { Text(stringResource(candidate.label())) })
                         }
                     }
                     if (gesture == Gesture.CHORD) OpCard {
                         Text(stringResource(R.string.second_button), style = MaterialTheme.typography.titleMedium)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button.entries.filter { it != button && it != Button.POWER }.forEach { candidate ->
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button.entries.filter { it != button }.forEach { candidate ->
                             FilterChip(partner == candidate, onClick = { partner = candidate }, label = { Text(stringResource(candidate.label())) })
                         } }
                     }
                     if (button == Button.POWER) Notice(stringResource(R.string.power_safety))
-                    if (button == Button.POWER && dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) Notice(stringResource(R.string.power_double_experimental))
+                    if (button == Button.POWER && gesture == Gesture.DOUBLE && dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) Notice(stringResource(R.string.power_double_experimental))
                     if (gesture == Gesture.CHORD) Notice(stringResource(R.string.chord_plus_first))
                     if (trigger == null) Notice(stringResource(R.string.reserved_chord))
                     if (triggerCapability?.status != Support.SUPPORTED) triggerCapability?.let { Notice(stringResource(it.reason)) }
@@ -168,7 +168,7 @@ fun RuleEditor(config: Configuration, original: Rule?, onClose: () -> Unit, onSa
                                 Text(stringResource(R.string.ui_record_format), color = OpColors.Muted, style = MaterialTheme.typography.bodySmall)
                             }
                             if (actionCapability?.status != Support.SUPPORTED) actionCapability?.let { Text(stringResource(it.reason), color = OpColors.Amber, style = MaterialTheme.typography.bodySmall) }
-                        } else if(candidate in setOf(ActionKind.ACTIVITY,ActionKind.STOCK_CAMERA_CAPTURE)) StatusChip(stringResource(R.string.ui_camera_trial), OpColors.Amber)
+                        } else if(candidate == ActionKind.ACTIVITY) StatusChip(stringResource(R.string.ui_camera_trial), OpColors.Amber)
                     } }
                 }
                 3 -> {

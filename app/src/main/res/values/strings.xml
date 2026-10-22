@@ -32,7 +32,7 @@
     <string name="torch_off">Tắt đèn pin</string>
     <string name="open_app">Mở ứng dụng</string>
     <string name="open_activity">Mở màn hình ứng dụng (Root)</string>
-    <string name="stock_camera">Camera gốc: mở và chụp</string>
+    <string name="stock_camera">Mở camera gốc</string>
     <string name="recorder_toggle">Bắt đầu / dừng ghi âm</string>
     <string name="your_buttons">Điều khiển nút</string>
     <string name="overview_description">Cấu hình theo giờ. Mặc định không chiếm nút nào.</string>
@@ -63,7 +63,7 @@
     <string name="grant_permissions">Cấp quyền hành động</string>
     <string name="enable_accessibility">Mở cài đặt Trợ năng</string>
     <string name="app_settings">Thông tin ứng dụng / pin</string>
-    <string name="accessibility_description">Quan sát phím âm lượng để chẩn đoán. Không đọc nội dung màn hình. Bản phát triển chưa thay thế thao tác hệ thống.</string>
+    <string name="accessibility_description">Quan sát phím âm lượng. Khi bạn mở Kiểm tra Activity / UI, đọc cây giao diện để hiển thị và lưu TXT theo yêu cầu. Không tự bấm hoặc điều khiển ứng dụng.</string>
     <string name="accessibility_connected">Dịch vụ Trợ năng đã kết nối</string>
     <string name="accessibility_disconnected">Dịch vụ Trợ năng chưa kết nối</string>
     <string name="action_tests">Kiểm tra hành động thủ công</string>
@@ -116,7 +116,7 @@
     <string name="choose_action">Chọn hành động</string>
     <string name="review_rule">Kiểm tra và lưu</string>
     <string name="second_button">Nút thứ hai</string>
-    <string name="power_safety">Power single/long luôn thuộc hệ thống. Tổ hợp chứa Power và hai phím Volume được bảo lưu.</string>
+    <string name="power_safety">Nguồn nhấn đơn/giữ thuộc hệ thống. Tổ hợp Nguồn + Volume thay hành động gốc khi rule sẵn sàng.</string>
     <string name="reserved_chord">Tổ hợp này được bảo lưu hoặc không hợp lệ.</string>
     <string name="use_schedule">Chỉ áp dụng theo khung giờ</string>
     <string name="start_time">Bắt đầu %1$s</string>
@@ -224,7 +224,29 @@
     <string name="ui_cancel_changes">Bỏ các thay đổi?</string>
     <string name="ui_camera_trial">Cần thử trước khi bật</string>
     <string name="power_double_experimental">Power nhấn đúp · thử nghiệm. Nhấn đơn chờ cửa sổ nhiều lần của hệ thống; nhấn giữ và khẩn cấp vẫn do OEM xử lý.</string>
-    <string name="chord_plus_first">Giữ Plus rồi nhấn Volume+ hoặc Volume− trước khi hành động giữ chạy. Chiều Volume trước chưa hỗ trợ.</string>
+    <string name="chord_plus_first">Có Plus: giữ Plus trước rồi nhấn nút còn lại. Khi có rule tổ hợp, Plus nhấn giữ chạy lúc thả. Nguồn + Volume: nhấn gần đồng thời (150 ms), hỗ trợ cả hai thứ tự.</string>
     <string name="advanced_backend_missing">Hook này chưa sẵn sàng trên backend hiện tại.</string>
     <string name="ui_configurable">Có thể cấu hình</string>
+    <string name="inspector_title">Kiểm tra Activity / UI</string>
+    <string name="inspector_subtitle">Cửa sổ nổi · Lưu cây UI thành TXT</string>
+    <string name="inspector_help">Xem Activity và cây UI của màn hình đang mở, kể cả Cài đặt. Chỉ đọc khi cửa sổ này đang bật.</string>
+    <string name="inspector_access_ready">Trợ năng đã kết nối</string>
+    <string name="inspector_access_needed">Cần bật Trợ năng OPlusKeyControl. Sau cập nhật, có thể cần tắt rồi bật lại.</string>
+    <string name="inspector_open">Mở cửa sổ kiểm tra</string>
+    <string name="inspector_access_settings">Cài đặt Trợ năng</string>
+    <string name="inspector_storage">TXT lưu tại Download/OPlusKeyControl (Android 10+). Trường mật khẩu được ẩn. Chỉ lưu khi bấm Lưu TXT; một số màn hình bảo vệ không cung cấp cây UI.</string>
+    <string name="inspector_loading">Đang đọc màn hình…</string>
+    <string name="inspector_refresh">Làm mới</string>
+    <string name="inspector_save">Lưu TXT</string>
+    <string name="inspector_pause">Tạm dừng</string>
+    <string name="inspector_resume">Tiếp tục</string>
+    <string name="inspector_collapse">Thu gọn</string>
+    <string name="inspector_expand">Mở cây UI</string>
+    <string name="inspector_close">Đóng</string>
+    <string name="inspector_drag">Kéo để di chuyển cửa sổ</string>
+    <string name="inspector_empty">Không đọc được cây UI. Thử Làm mới hoặc bật lại Trợ năng.</string>
+    <string name="inspector_captured">Cây UI hiện tại · Chạm Tạm dừng để giữ bản đọc</string>
+    <string name="inspector_saved">Đã lưu</string>
+    <string name="inspector_save_failed">Không lưu được TXT. Thử lại.</string>
+    <string name="inspector_start_failed">Không mở được cửa sổ. Thử bật lại Trợ năng.</string>
 </resources>

@@ -11,13 +11,16 @@ enum class ActionKind { TORCH_TOGGLE, TORCH_ON, TORCH_OFF, APP, ACTIVITY, STOCK_
 fun Trigger.isPlusVolumeChord(): Boolean = gesture == Gesture.CHORD && Button.PLUS in setOf(button, partner) &&
     setOf(button, partner).any { it == Button.VOLUME_UP || it == Button.VOLUME_DOWN }
 
+fun Trigger.isPlusChord(): Boolean = gesture == Gesture.CHORD && Button.PLUS in setOf(button, partner)
+fun Trigger.isPowerVolumeChord(): Boolean = gesture == Gesture.CHORD && Button.POWER in setOf(button, partner) &&
+    setOf(button, partner).any { it == Button.VOLUME_UP || it == Button.VOLUME_DOWN }
+
 data class Trigger(val button: Button, val gesture: Gesture, val partner: Button? = null) {
     init {
         require((gesture == Gesture.CHORD) == (partner != null))
         require(partner != button)
         require(button != Button.POWER || gesture in setOf(Gesture.DOUBLE, Gesture.CHORD))
-        // OEM screenshot, volume/emergency and unverified Power chords are reserved.
-        require(gesture != Gesture.CHORD || Button.POWER !in setOf(button, partner))
+        // Both-volume remains reserved; Power single/long still cannot be mapped.
         require(gesture != Gesture.CHORD || setOf(button, partner) != setOf(Button.VOLUME_UP, Button.VOLUME_DOWN))
     }
     fun sameAs(other: Trigger) = if (gesture == Gesture.CHORD && other.gesture == Gesture.CHORD)

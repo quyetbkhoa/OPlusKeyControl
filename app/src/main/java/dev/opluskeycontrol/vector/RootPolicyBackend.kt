@@ -15,14 +15,15 @@ import java.time.ZonedDateTime
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Explicit experimental build only. Raw Power is observed but never consumed;
- * Volume ownership is limited to an opted-in Plus-first chord. No settings writes,
+/** Explicit experimental build only. Raw Power/Volume stay with OEM except a mapped Plus-first partner pair;
+ * native Power/Volume chord callbacks are replaced only when ready. No settings writes,
  * event injection, disk access or IPC on the input interception path.
  */
 @androidx.annotation.RequiresApi(36)
 class RootPolicyBackend(private val module: XposedModule) {
     private val session = PlusPolicySession(plusVolumeChords = dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS)
     private val power = PowerDoubleSession()
+    private val powerChord = PowerChordSession()
     @Volatile private var features = PolicyBinder.PLUS or if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) PolicyBinder.PLUS_VOLUME else 0
     private var powerTimeout = 300L
     private val powerHandles = mutableListOf<XposedInterface.HookHandle>()
@@ -99,6 +100,8 @@ class RootPolicyBackend(private val module: XposedModule) {
                     if (event.keyCode == 780 && event.scanCode == 735) {
                         if (peer == null) requestConnect()
                         synchronized(lock) {
+                            powerChord.cancel()
+                            power.cancel()
                             val driverMatches = event.device?.name == "gpio-keys"
                             if (!driverMatches || !ownerUserActive) session.disconnect()
                             val result = session.accept(PolicyEvent(event.deviceId, event.downTime, event.eventTime,
@@ -110,8 +113,14 @@ class RootPolicyBackend(private val module: XposedModule) {
                         }
                     } else if (event.keyCode == KeyEvent.KEYCODE_POWER) {
                         synchronized(lock) {
-                            session.cancelGesture(); worker.removeCallbacks(deadline)
-                            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS && ownerUserActive && event.device?.name == "pmic_pwrkey" && event.scanCode == 116)
+                            val valid = ownerUserActive && event.device?.name == "pmic_pwrkey" && event.scanCode == 116
+                            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS && valid) {
+                                val result = session.acceptPartner(Button.POWER, policyEvent(event), SystemClock.uptimeMillis(), ZonedDateTime.now())
+                                consume = result.consume; dispatch(result.actions); schedule()
+                                if (consume) { power.cancel(); powerChord.cancel() }
+                                else powerChord.observe(Button.POWER, policyEvent(event))
+                            } else { session.cancelGesture(); powerChord.cancel(); worker.removeCallbacks(deadline) }
+                            if (!consume && dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS && ownerUserActive && event.device?.name == "pmic_pwrkey" && event.scanCode == 116)
                                 power.observe(policyEvent(event)) else power.cancel()
                         }
                     } else if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP || event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
@@ -120,18 +129,20 @@ class RootPolicyBackend(private val module: XposedModule) {
                             val partner = if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) Button.VOLUME_UP else Button.VOLUME_DOWN
                             val validDriver = if (partner == Button.VOLUME_UP) event.device?.name == "pmic_resin" && event.scanCode == 115
                                 else event.device?.name == "gpio-keys" && event.scanCode == 114
-                            if (!validDriver || !ownerUserActive) session.cancelGesture()
-                            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) {
+                            if (!validDriver || !ownerUserActive) { session.cancelGesture(); powerChord.cancel() }
+                            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS && validDriver && ownerUserActive) {
                                 val result = session.acceptPartner(partner, policyEvent(event), SystemClock.uptimeMillis(), ZonedDateTime.now())
                                 consume = result.consume; dispatch(result.actions); schedule()
+                                if (consume) powerChord.cancel() else powerChord.observe(partner, policyEvent(event))
+                                if (logBudget.getAndDecrement() > 0) Log.i("OPlusKeyControl", "RUNTIME_PARTNER button=$partner edge=${event.action} owned=$consume")
                             } else { session.cancelGesture(); worker.removeCallbacks(deadline) }
                         }
                     }
-                } catch (_: Throwable) { synchronized(lock) { session.disconnect(); power.disconnect() } }
+                } catch (_: Throwable) { synchronized(lock) { session.disconnect(); power.disconnect(); powerChord.disconnect() } }
                 if (consume) 0 else chain.proceed() // original exactly once on pass-through
             }
             installed = true
-            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) installPower(loader)
+            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) { installPower(loader); installPowerChords(loader) }
             worker.post(initializer) // finite bootstrap retries; no standby polling
             writer = Thread({ writeActions() }, "OPlusKeyControl-handoff").apply { isDaemon = true; start() }
             diagnostic("RUNTIME_ATTACHED features=$features")
@@ -181,6 +192,48 @@ class RootPolicyBackend(private val module: XposedModule) {
             for (handle in powerHandles) runCatching { handle.unhook() }
             powerHandles.clear(); setPowerFeature(false)
             diagnostic("RUNTIME_POWER_UNSUPPORTED", failure)
+        }
+    }
+    /** Exact firmware rule callbacks: native recognition/cancellation and raw pairs remain OEM-owned. */
+    private fun installPowerChords(loader: ClassLoader) {
+        val added = mutableListOf<XposedInterface.HookHandle>()
+        try {
+            val base = loader.loadClass("com.android.server.policy.KeyCombinationManager\$TwoKeysCombinationRule")
+            val first = base.getDeclaredField("mKeyCode1").apply { isAccessible = true }
+            val second = base.getDeclaredField("mKeyCode2").apply { isAccessible = true }
+            for ((suffix, partner, key) in listOf(Triple("6", Button.VOLUME_DOWN, 25), Triple("9", Button.VOLUME_UP, 24))) {
+                val type = loader.loadClass("com.android.server.policy.PhoneWindowManager\$$suffix")
+                val execute = type.getDeclaredMethod("execute")
+                require(execute.returnType == Void.TYPE)
+                added += module.hook(execute).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept { chain ->
+                    var consumed = false
+                    try {
+                        if (setOf(first.getInt(chain.thisObject), second.getInt(chain.thisObject)) == setOf(26, key) &&
+                            peer != null && ownerUserActive && !disposed) synchronized(lock) {
+                            consumed = powerChord.accept(partner, SystemClock.uptimeMillis(), ZonedDateTime.now()) { queue.offer(it) }
+                        }
+                    } catch (_: Throwable) { synchronized(lock) { powerChord.disconnect() } }
+                    if (consumed) { diagnostic("RUNTIME_POWER_CHORD_DISPATCH partner=$partner"); null } else chain.proceed()
+                }
+                if (partner == Button.VOLUME_UP) {
+                    val pre = type.getDeclaredMethod("preCondition")
+                    added += module.hook(pre).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept { chain ->
+                        val original = chain.proceed() as Boolean
+                        val ready = try {
+                            peer != null && ownerUserActive && !disposed &&
+                                setOf(first.getInt(chain.thisObject), second.getInt(chain.thisObject)) == setOf(26, key) &&
+                                synchronized(lock) { powerChord.ready(partner, SystemClock.uptimeMillis(), ZonedDateTime.now()) }
+                        } catch (_: Throwable) { false }
+                        original || ready
+                    }
+                }
+            }
+            powerHandles += added
+            features = features or PolicyBinder.POWER_VOLUME
+            diagnostic("RUNTIME_POWER_CHORDS_READY")
+        } catch (failure: Throwable) {
+            added.forEach { runCatching { it.unhook() } }
+            diagnostic("RUNTIME_POWER_CHORDS_UNSUPPORTED", failure)
         }
     }
     private fun setPowerFeature(enabled: Boolean) {
@@ -274,10 +327,12 @@ class RootPolicyBackend(private val module: XposedModule) {
                                                         val policy = PolicyConfiguration(configuration.rules, configuration.enabled, configuration.tier)
                                                         val lease = BackendLease(version, Long.MAX_VALUE, true, allowed)
                                                         val plusTriggers = setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG).map { Trigger(Button.PLUS, it) }.toSet() +
-                                                            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) setOf(Trigger(Button.PLUS, Gesture.CHORD, Button.VOLUME_UP), Trigger(Button.PLUS, Gesture.CHORD, Button.VOLUME_DOWN)) else emptySet()
+                                                            if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER).map { Trigger(Button.PLUS, Gesture.CHORD, it) }.toSet() else emptySet()
                                                         session.configure(policy, configuration.timing, PolicyProof(Build.DISPLAY, plusTriggers, true), lease)
                                                         if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) power.configure(policy,
                                                             PolicyProof(Build.DISPLAY, setOf(Trigger(Button.POWER, Gesture.DOUBLE)), true), lease, powerTimeout)
+                                                        if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) powerChord.configure(policy,
+                                                            PolicyProof(Build.DISPLAY, setOf(Button.VOLUME_UP, Button.VOLUME_DOWN).map { Trigger(Button.POWER, Gesture.CHORD, it) }.toSet(), true), lease)
                                                         worker.removeCallbacks(deadline)
                                                     }
                                                 } catch (failure: Exception) { diagnostic("RUNTIME_CONFIG_FAILED", failure); drop() }
@@ -362,7 +417,7 @@ class RootPolicyBackend(private val module: XposedModule) {
         val oldConnection: ServiceConnection?
         val oldDeath: IBinder.DeathRecipient?
         synchronized(lock) {
-            session.disconnect(); power.disconnect(); revision = 0; queue.clear(); worker.removeCallbacks(deadline)
+            session.disconnect(); power.disconnect(); powerChord.disconnect(); revision = 0; queue.clear(); worker.removeCallbacks(deadline)
             old = peer; oldCallback = callback; oldConnection = connection; oldDeath = peerDeath
             peer = null; callback = null; connection = null; peerDeath = null
         }
