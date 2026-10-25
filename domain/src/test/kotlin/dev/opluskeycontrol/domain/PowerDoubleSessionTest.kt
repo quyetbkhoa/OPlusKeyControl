@@ -29,6 +29,23 @@ class PowerDoubleSessionTest {
         assertTrue(s.accept(2,250,0,600,time) { count++; assertEquals(rule,it.rule); true })
         assertEquals(1,count)
     }
+    @Test fun newSemanticEntryWaitsForCompletedOrdinaryGesture() {
+        var count = 0; val s = session().double()
+        assertFalse(s.acceptGesture(0,0,2,250,0,300,time) { fail(); true })
+        assertTrue(s.acceptGesture(0,1,2,250,0,600,time) { count++; true })
+        assertTrue(s.acceptGesture(0,1,2,250,0,610,time) { count++; true })
+        assertEquals(1,count)
+    }
+    @Test fun longVeryLongUnknownAndCancelledGesturesNeverDispatch() {
+        for ((type, action) in listOf(1 to 0, 1 to 1, 2 to 1, 3 to 1, 0 to 2)) {
+            val s = session().double()
+            assertFalse(s.acceptGesture(type,action,2,250,0,600,time) { fail(); true })
+            assertFalse(s.acceptGesture(0,1,2,250,0,610,time) { fail(); true })
+        }
+    }
+    @Test fun nativeEmergencyAndHigherCountsStayUnconsumedAtNewEntry() {
+        for(count in listOf(1,3,4,5,6)) assertFalse(session().double().acceptGesture(0,1,count,250,0,600,time) { fail(); true })
+    }
     @Test fun semanticCallWithoutPhysicalEdgesPasses() {
         assertFalse(session().accept(2,250,0,600,time) { fail(); true })
     }

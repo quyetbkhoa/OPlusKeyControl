@@ -24,6 +24,13 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     private var ownedDown = false
     private var draining = false
     private var connected = false
+    private var feedbackGiven = false
+    private var feedbackDeadline: Long? = null
+    private val recognitions = mutableListOf<PolicyDecision.Replace>()
+    fun takeRecognitions(): List<PolicyDecision.Replace> = recognitions.toList().also { recognitions.clear() }
+    private fun recognize(actions: List<PolicyDecision.Replace>) {
+        if (!feedbackGiven && actions.isNotEmpty()) { feedbackGiven = true; feedbackDeadline = null; recognitions += actions.first() }
+    }
     private var deferredLong = false
     private var chordCommitted = false
     private var plusDownAt = 0L
@@ -36,6 +43,7 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     private val partnerDecisions = LinkedHashMap<Pair<Button, PolicyEvent>, Boolean>()
 
     fun configure(configuration: PolicyConfiguration, timing: Timing, proof: PolicyProof, lease: BackendLease) {
+        recognitions.clear(); feedbackDeadline = null; feedbackGiven = false
         precedingVolumes.clear()
         engine = GestureEngine(allTriggers, timing)
         longThreshold = timing.longMs
@@ -49,9 +57,9 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         gate.verify(proof); gate.attach(lease); connected = true
     }
 
-    fun disconnect() { precedingVolumes.clear(); deferredLong = false; connected = false; gate.disconnect(); engine.reset(); draining = ownedDown }
-    fun cancelGesture() { precedingVolumes.clear(); deferredLong = false; engine.reset(); draining = ownedDown } // paired UP closes an owned DOWN
-    fun nextDeadline(): Long? = if (connected) engine.nextDeadline() else null
+    fun disconnect() { recognitions.clear(); feedbackDeadline = null; precedingVolumes.clear(); deferredLong = false; connected = false; gate.disconnect(); engine.reset(); draining = ownedDown }
+    fun cancelGesture() { recognitions.clear(); feedbackDeadline = null; precedingVolumes.clear(); deferredLong = false; engine.reset(); draining = ownedDown } // paired UP closes an owned DOWN
+    fun nextDeadline(): Long? = if (connected) listOfNotNull(engine.nextDeadline(), feedbackDeadline).minOrNull() else null
 
     private fun resolve(candidates: List<Trigger>, now: Long, local: ZonedDateTime) = candidates.mapNotNull {
         gate.decide(it, firmware, now, local) as? PolicyDecision.Replace
@@ -72,6 +80,9 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
             // Active chords reserve the modifier until release; mapped LONG is deferred
             // to release so it cannot steal a slower physical chord.
             deferredLong = chordReady
+            feedbackGiven = false
+            feedbackDeadline = if (chordReady && gate.decide(Trigger(button, Gesture.LONG), firmware, now, local) is PolicyDecision.Replace)
+                event.time + longThreshold else null
             chordCommitted = false; plusDownAt = event.time
             engine.allowLongRecognition(button, !chordReady)
             ownedDown = true; device = event.deviceId
@@ -97,7 +108,8 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
                 resolve(candidates, now, local)
             } else emptyList()
         } else emptyList()
-        if (event.edge == Edge.UP) { ownedDown = false; draining = false; if (engine.nextDeadline() == null) device = null }
+        recognize(actions + reverseActions)
+        if (event.edge == Edge.UP) { feedbackDeadline = null; ownedDown = false; draining = false; if (engine.nextDeadline() == null) device = null }
         decisions[event] = true
         while (decisions.size > 32) decisions.remove(decisions.keys.first())
         return PolicyOutcome(true, actions + reverseActions)
@@ -142,14 +154,16 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
             return PolicyOutcome(false)
         }
         val due = resolve(engine.advance(event.time), now, local)
-        if (!engine.canStartChord(button, partner)) { cancelGesture(); return PolicyOutcome(false, due) }
+        if (!engine.canStartChord(button, partner)) { cancelGesture(); recognize(due); return PolicyOutcome(false, due) }
         // The IMS adapter verifies each physical driver before reaching this logical session.
         val candidates = engine.accept(ButtonEvent("owned-input", device!!, partner, Edge.DOWN, event.time))
         if (candidates.none { it.sameAs(chord) }) { cancelGesture(); return PolicyOutcome(false, due) }
         chordCommitted = true
         partners[partner] = PartnerPress(event.deviceId, event.downTime)
         rememberPartner(key)
-        return PolicyOutcome(true, due + resolve(candidates, now, local))
+        val actions = due + resolve(candidates, now, local)
+        recognize(actions)
+        return PolicyOutcome(true, actions)
     }
     private fun rememberPartner(key: Pair<Button, PolicyEvent>, consume: Boolean = true) {
         partnerDecisions[key] = consume
@@ -159,6 +173,11 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     fun advance(now: Long, local: ZonedDateTime): List<PolicyDecision.Replace> {
         if (!connected) return emptyList()
         val result = resolve(engine.advance(now), now, local)
+        recognize(result)
+        if (feedbackDeadline?.let { now >= it } == true) {
+            feedbackDeadline = null
+            if (ownedDown && !draining && !chordCommitted) recognize(resolve(listOf(Trigger(button, Gesture.LONG)), now, local))
+        }
         if (!ownedDown && engine.nextDeadline() == null) device = null
         return result
     }

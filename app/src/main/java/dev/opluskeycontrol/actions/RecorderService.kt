@@ -25,6 +25,8 @@ class RecorderService : Service() {
         val origin = MutableStateFlow<dev.opluskeycontrol.domain.Trigger?>(null)
     }
     @Volatile private var stopRequested = false
+    @Volatile private var confirmStop = false
+    @Volatile private var confirmStart = true
     @Volatile private var destroyed = false
     private var worker: Thread? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -32,6 +34,7 @@ class RecorderService : Service() {
     override fun onBind(intent: Intent?) = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP || (intent?.action == TOGGLE && worker != null)) {
+            confirmStop = worker != null && intent?.getBooleanExtra("recognitionFeedback", false) != true
             stopRequested = true
             if (worker == null) stopSelf()
             return START_NOT_STICKY
@@ -54,6 +57,8 @@ class RecorderService : Service() {
         }
         error.value = false
         stopRequested = false
+        confirmStop = false
+        confirmStart = intent?.getBooleanExtra("recognitionFeedback", false) != true
         try {
             val channel = "recording"
             getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(channel, getString(R.string.recording), NotificationManager.IMPORTANCE_LOW))
@@ -106,6 +111,7 @@ class RecorderService : Service() {
                     check(audio.state == AudioRecord.STATE_INITIALIZED)
                     audio.startRecording()
                     check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING)
+                    if (confirmStart) (application as dev.opluskeycontrol.KeyControlApp).feedback.confirm()
                     val pcm = ShortArray(4096)
                     val mp3 = ByteArray(16384)
                     var samples = 0L
@@ -134,6 +140,7 @@ class RecorderService : Service() {
             handler.post {
                 handler.removeCallbacks(autoStop)
                 worker = null; recording.value = false; origin.value = null
+                if (complete && confirmStop) (application as dev.opluskeycontrol.KeyControlApp).feedback.confirm()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 if (!destroyed) stopSelf()
             }

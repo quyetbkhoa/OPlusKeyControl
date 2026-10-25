@@ -5,12 +5,13 @@ import android.os.Parcel
 
 /** Private service protocol. Calls run on IPC workers, never the input thread. */
 object PolicyBinder {
-    const val DESCRIPTOR = "dev.opluskeycontrol.Policy.v4"
+    const val DESCRIPTOR = "dev.opluskeycontrol.Policy.v5"
     const val HELLO = IBinder.FIRST_CALL_TRANSACTION
     const val CONFIG = HELLO + 1
     const val ACTION = HELLO + 2
     const val DISCONNECT = HELLO + 3
     const val FEATURES = HELLO + 4
+    const val FEEDBACK = HELLO + 5
     const val PLUS = 1
     const val POWER_DOUBLE = 2
     const val PLUS_VOLUME = 4

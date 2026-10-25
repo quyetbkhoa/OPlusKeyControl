@@ -71,7 +71,7 @@ class PolicyBridge(private val app: KeyControlApp) {
                             if (peer === callback && authorization.allowed.value && !app.store.emergency.value) features.value = supported
                         } }
                     }
-                    PolicyBinder.ACTION -> {
+                    PolicyBinder.ACTION, PolicyBinder.FEEDBACK -> {
                         val callback = data.readStrongBinder()
                         val revision = data.readLong(); val id = requireNotNull(data.readString())
                         require(id.length <= 128 && data.dataAvail() == 0)
@@ -82,8 +82,9 @@ class PolicyBridge(private val app: KeyControlApp) {
                                 if (!authorization.allowed.value || app.store.emergency.value || !c.enabled || c.tier != Tier.ROOT) return@synchronized
                                 val rule = c.rules.singleOrNull { it.id == id } ?: return@synchronized
                                 if (RuleResolver.resolve(c.rules, rule.trigger, ZonedDateTime.now()) != Resolution.Match(rule)) return@synchronized
-                                if (rule.action.kind != ActionKind.RECORD_TOGGLE) app.scope.launch {
-                                    app.actions.execute(rule.action, app.visible.value, rootAuthorized = true)
+                                if (code == PolicyBinder.FEEDBACK) app.feedback.confirm()
+                                else if (rule.action.kind != ActionKind.RECORD_TOGGLE) app.scope.launch {
+                                    app.actions.execute(rule.action, app.visible.value, rootAuthorized = true, confirmation = false)
                                 }
                             }
                         }
@@ -149,17 +150,23 @@ class PolicyBridge(private val app: KeyControlApp) {
             val target = peer ?: return
             try {
                 val c = effectiveConfiguration()
+                // Target-specific proof must not block unrelated rules of the same action kind.
+                val readyRuleIds = c.rules.filter { rule -> rule.enabled && when (rule.action.kind) {
+                    ActionKind.ACTIVITY -> dev.opluskeycontrol.actions.ActionProofs.verified(app, rule.action)
+                    ActionKind.APP -> runCatching {
+                        app.packageManager.getLaunchIntentForPackage(requireNotNull(rule.action.packageName)) != null
+                    }.getOrDefault(false)
+                    else -> true
+                } }.map { it.id }
                 val ready = ActionKind.entries.filter { kind ->
                     if (app.actions.busy.value) return@filter false
                     when (kind) {
                         ActionKind.TORCH_TOGGLE, ActionKind.TORCH_ON, ActionKind.TORCH_OFF -> app.actions.torchReady.value && Capabilities.permission(app, android.Manifest.permission.CAMERA)
                         ActionKind.STOCK_CAMERA_CAPTURE -> true
-                        ActionKind.ACTIVITY -> c.rules.filter { it.enabled && it.action.kind == kind }.all { dev.opluskeycontrol.actions.ActionProofs.verified(app, it.action) }
+                        ActionKind.ACTIVITY -> true // Individual target readiness is carried by rule ID below.
                         ActionKind.RECORD_TOGGLE -> RecorderService.recording.value || (!RecorderService.error.value && Capabilities.permission(app, android.Manifest.permission.RECORD_AUDIO) &&
                             Capabilities.permission(app, android.Manifest.permission.POST_NOTIFICATIONS))
-                        ActionKind.APP -> c.rules.filter { it.enabled && it.action.kind == kind }.all {
-                            runCatching { app.packageManager.getLaunchIntentForPackage(requireNotNull(it.action.packageName)) != null }.getOrDefault(false)
-                        }
+                        ActionKind.APP -> true
                     }
                 }
                 val bytes = PolicyWire.binderText(RuleCodec.encode(c.copy(enabled = c.enabled && !app.store.emergency.value && authorization.allowed.value)))
@@ -167,6 +174,8 @@ class PolicyBridge(private val app: KeyControlApp) {
                     it.writeLong(generation.incrementAndGet()); it.writeByteArray(bytes)
                     it.writeInt(ready.fold(0) { mask, kind -> mask or (1 shl kind.ordinal) })
                     it.writeInt(if (RecorderService.recording.value) 1 else 0)
+                    it.writeInt(readyRuleIds.size)
+                    readyRuleIds.forEach(it::writeString)
                 }
             } catch (_: Exception) { closePeer() }
         }

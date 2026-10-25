@@ -1,6 +1,8 @@
 package dev.opluskeycontrol.storage
 
 import android.content.Context
+import androidx.datastore.core.DataMigration
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -11,23 +13,39 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.DayOfWeek
+import java.time.ZonedDateTime
 
-private val Context.dataStore by preferencesDataStore("rules")
-data class Configuration(val rules: List<Rule> = emptyList(), val enabled: Boolean = false, val tier: Tier = Tier.BASIC, val timing: Timing = Timing())
+private val configurationKey = stringPreferencesKey("configuration_v1")
+private val Context.dataStore by preferencesDataStore("rules", produceMigrations = {
+    listOf(object : DataMigration<Preferences> {
+        override suspend fun shouldMigrate(currentData: Preferences): Boolean = currentData[configurationKey]?.let { text ->
+            runCatching {
+                val rules = JSONObject(text).getJSONArray("rules")
+                (0 until rules.length()).any { !rules.getJSONObject(it).isNull("schedule") }
+            }.getOrDefault(false)
+        } ?: false
+        override suspend fun migrate(currentData: Preferences): Preferences = currentData.toMutablePreferences().apply {
+            this[configurationKey] = RuleCodec.encode(RuleCodec.decode(requireNotNull(currentData[configurationKey])))
+        }
+        override suspend fun cleanUp() = Unit
+    })
+})
+data class Configuration(val rules: List<Rule> = emptyList(), val enabled: Boolean = false, val tier: Tier = Tier.BASIC, val timing: Timing = Timing(), val hapticFeedback: Boolean = true)
 
 object RuleCodec {
     fun encode(c: Configuration): String = JSONObject().apply {
+        require(c.rules.none { RuleResolver.conflicts(it, c.rules) })
         put("version", 1); put("enabled", c.enabled); put("tier", c.tier.name)
+        put("hapticFeedback", c.hapticFeedback)
         put("timing", JSONObject().put("double", c.timing.doubleMs).put("long", c.timing.longMs).put("chord", c.timing.chordMs).put("debounce", c.timing.debounceMs))
-        put("rules", JSONArray().apply { c.rules.forEach { r -> put(JSONObject().apply {
+        put("rules", JSONArray().apply { withoutSchedules(c.rules, ZonedDateTime.now()).forEach { r -> put(JSONObject().apply {
             put("id", r.id); put("button", r.trigger.button.name); put("gesture", r.trigger.gesture.name)
             put("partner", r.trigger.partner?.name); put("kind", r.action.kind.name)
             put("package", r.action.packageName); put("activity", r.action.activity); put("duration", r.action.durationSeconds)
             put("priority", r.priority); put("enabled", r.enabled)
-            r.schedule?.let { s -> put("schedule", JSONObject().put("start", s.startMinute).put("end", s.endMinute).put("days", JSONArray(s.days.map { it.value }))) }
         }) } })
     }.toString(2)
-    fun decode(text: String): Configuration {
+    fun decode(text: String, now: ZonedDateTime = ZonedDateTime.now()): Configuration {
         require(text.length <= 1_000_000)
         val obj = JSONObject(text)
         require(obj.getInt("version") == 1)
@@ -46,11 +64,22 @@ object RuleCodec {
         require(rules.map { it.id }.distinct().size == rules.size)
         require(rules.none { RuleResolver.conflicts(it, rules) })
         val t = obj.getJSONObject("timing")
-        return Configuration(rules, obj.getBoolean("enabled"), Tier.valueOf(obj.getString("tier")), Timing(t.getLong("double"), t.getLong("long"), t.getLong("chord"), t.getLong("debounce")))
+        return Configuration(withoutSchedules(rules, now), obj.getBoolean("enabled"), Tier.valueOf(obj.getString("tier")), Timing(t.getLong("double"), t.getLong("long"), t.getLong("chord"), t.getLong("debounce")), obj.optBoolean("hapticFeedback", true))
+    }
+
+    // Legacy backups may contain several time windows for the same trigger.
+    // Keep the current winner enabled and retain other actions as disabled mappings.
+    // Never drop the entire configuration or create ambiguous always-on mappings.
+    private fun withoutSchedules(rules: List<Rule>, now: ZonedDateTime): List<Rule> = rules.map { rule ->
+        val peers = rules.filter { it.enabled && it.trigger.sameAs(rule.trigger) }
+        val winner = if (peers.any { it.schedule != null })
+            (RuleResolver.resolve(peers, rule.trigger, now) as? Resolution.Match)?.rule ?: peers.maxByOrNull { it.priority }
+        else null
+        rule.copy(schedule = null, enabled = rule.enabled && (winner == null || winner.id == rule.id))
     }
 }
 class RuleStore(private val context: Context, private val scope: CoroutineScope) {
-    private val key = stringPreferencesKey("configuration_v1")
+    private val key = configurationKey
     val error = MutableStateFlow(false)
     // Synchronous safety latch: emergency disable takes effect before disk IO completes.
     val emergency = MutableStateFlow(false)

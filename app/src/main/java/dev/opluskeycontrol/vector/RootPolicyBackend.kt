@@ -26,9 +26,15 @@ class RootPolicyBackend(private val module: XposedModule) {
     private val powerChord = PowerChordSession()
     @Volatile private var features = PolicyBinder.PLUS or if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) PolicyBinder.PLUS_VOLUME else 0
     private var powerTimeout = 300L
+    private val powerEventBudget = java.util.concurrent.atomic.AtomicInteger(20)
+    private val powerCallbackBudget = java.util.concurrent.atomic.AtomicInteger(12)
+    private var lastPowerCompatibility: Boolean? = null
     private val powerHandles = mutableListOf<XposedInterface.HookHandle>()
     private val lock = Any()
-    private val queue = ArrayBlockingQueue<PolicyDecision.Replace>(16)
+    private data class Dispatch(val action: PolicyDecision.Replace, val execute: Boolean = true, val feedback: Boolean = true)
+    private val queue = ArrayBlockingQueue<Dispatch>(16)
+    private fun enqueueAction(action: PolicyDecision.Replace) = queue.offer(Dispatch(action))
+    @Volatile private var hapticEnabled = false
     private val connecting = AtomicBoolean()
     private val thread by lazy { HandlerThread("OPlusKeyControl-policy").apply { start() } }
     private val worker by lazy { Handler(thread.looper) }
@@ -53,6 +59,21 @@ class RootPolicyBackend(private val module: XposedModule) {
         if (diagnosticBudget.getAndDecrement() > 0) Log.w("OPlusKeyControl", stage, error)
     }
     private val reconnect = Runnable { connect() }
+    // All retry scheduling runs on worker. Recover transient process/binding loss
+    // without needing an Activity resume or sacrificing the next physical press.
+    private fun scheduleReconnect() {
+        if (disposed) return
+        worker.removeCallbacks(reconnect)
+        if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+    }
+    private fun recoverConnection(expected: ServiceConnection, stage: String) {
+        worker.post {
+            if (disposed || connection !== expected) return@post
+            diagnostic(stage)
+            drop()
+            scheduleReconnect()
+        }
+    }
     private fun requestConnect() {
         // An app-ready event may arrive while a failed boot connection unwinds.
         // Queue a bounded retry window instead of losing that event to connecting.
@@ -74,7 +95,7 @@ class RootPolicyBackend(private val module: XposedModule) {
         if (peer == null && connection != null) {
             diagnostic("RUNTIME_BIND_TIMEOUT")
             drop()
-            if (++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+            scheduleReconnect()
         }
     }
     private val deadline = Runnable {
@@ -85,7 +106,7 @@ class RootPolicyBackend(private val module: XposedModule) {
     }
     @Synchronized fun install(loader: ClassLoader) {
         if (disposed || installed) return
-        if (Build.VERSION.SDK_INT != 36 || Build.MODEL != "CPH2745" || Build.DISPLAY != PolicyInputProbe.BUILD) {
+        if (!RuntimeProfile.supports(Build.VERSION.SDK_INT, Build.MODEL, Build.DISPLAY)) {
             diagnostic("RUNTIME_PROFILE_BLOCKED sdk=${Build.VERSION.SDK_INT} model=${Build.MODEL} build=${Build.DISPLAY}")
             return
         }
@@ -114,6 +135,7 @@ class RootPolicyBackend(private val module: XposedModule) {
                     } else if (event.keyCode == KeyEvent.KEYCODE_POWER) {
                         synchronized(lock) {
                             val valid = ownerUserActive && event.device?.name == "pmic_pwrkey" && event.scanCode == 116
+                            if (powerEventBudget.getAndDecrement() > 0) Log.i("OPlusKeyControl", "RUNTIME_POWER_RAW edge=${event.action} valid=$valid repeat=${event.repeatCount}")
                             if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS && valid) {
                                 val result = session.acceptPartner(Button.POWER, policyEvent(event), SystemClock.uptimeMillis(), ZonedDateTime.now())
                                 consume = result.consume; dispatch(result.actions); schedule()
@@ -162,13 +184,25 @@ class RootPolicyBackend(private val module: XposedModule) {
             powerTimeout = detector.getDeclaredField("MULTI_PRESS_TIMEOUT").apply { isAccessible = true }.getLong(null)
             require(powerTimeout in 100..1000)
             val max = rule.getDeclaredMethod("getMaxMultiPressCount"); require(max.returnType == Int::class.javaPrimitiveType)
-            val multi = rule.getDeclaredMethod("onMultiPress", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            // API 37 moved public dispatch to onKeyGesture; its private onMultiPress
+            // helper can be inlined. Hook the actual semantic entry point instead.
+            val gestureEvent = RuntimeProfile.powerGestureEvent(Build.VERSION.SDK_INT)
+            val eventType = if (gestureEvent) loader.loadClass("com.android.server.policy.SingleKeyGestureEvent") else null
+            val getters = eventType?.let { type -> listOf("getType", "getAction", "getPressCount", "getStartTime", "getDisplayId").associateWith { name ->
+                type.getDeclaredMethod(name).apply { require(returnType == if(name == "getStartTime") Long::class.javaPrimitiveType else Int::class.javaPrimitiveType) }
+            } }
+            val multi = if (eventType != null) rule.getDeclaredMethod("onKeyGesture", eventType)
+                else rule.getDeclaredMethod("onMultiPress", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
             require(multi.returnType == Void.TYPE)
             powerHandles += module.hook(max).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept { chain ->
                 val original = chain.proceed() as Int
                 var result = original
                 try {
                     val compatible = !early.getBoolean(owner.get(chain.thisObject))
+                    if(lastPowerCompatibility != compatible) {
+                        lastPowerCompatibility = compatible
+                        diagnostic("RUNTIME_POWER_MODE early=${!compatible} callback=${multi.name}")
+                    }
                     setPowerFeature(compatible)
                     if (compatible && peer != null && ownerUserActive && !disposed) synchronized(lock) {
                         result = power.maxPressCount(original, SystemClock.uptimeMillis(), ZonedDateTime.now())
@@ -180,14 +214,22 @@ class RootPolicyBackend(private val module: XposedModule) {
                 var consumed = false
                 try {
                     if (peer != null && ownerUserActive && !disposed && !early.getBoolean(owner.get(chain.thisObject))) synchronized(lock) {
-                        consumed = power.accept(chain.getArg(1) as Int, chain.getArg(0) as Long, chain.getArg(2) as Int,
-                            SystemClock.uptimeMillis(), ZonedDateTime.now()) { queue.offer(it) }
+                        if (getters != null) {
+                            val event = chain.getArg(0)
+                            val type = getters.getValue("getType").invoke(event) as Int
+                            val action = getters.getValue("getAction").invoke(event) as Int
+                            val count = getters.getValue("getPressCount").invoke(event) as Int
+                            consumed = power.acceptGesture(type, action, count, getters.getValue("getStartTime").invoke(event) as Long,
+                                getters.getValue("getDisplayId").invoke(event) as Int, SystemClock.uptimeMillis(), ZonedDateTime.now()) { enqueueAction(it) }
+                            if (powerCallbackBudget.getAndDecrement() > 0) Log.i("OPlusKeyControl", "RUNTIME_POWER_GESTURE type=$type action=$action count=$count owned=$consumed")
+                        } else consumed = power.accept(chain.getArg(1) as Int, chain.getArg(0) as Long, chain.getArg(2) as Int,
+                            SystemClock.uptimeMillis(), ZonedDateTime.now()) { enqueueAction(it) }
                     }
                 } catch (_: Throwable) { synchronized(lock) { power.disconnect() } }
                 if (consumed) { diagnostic("RUNTIME_POWER_DOUBLE_DISPATCH"); null } else chain.proceed()
             }
             setPowerFeature(true)
-            diagnostic("RUNTIME_POWER_READY timeout=$powerTimeout")
+            diagnostic("RUNTIME_POWER_READY timeout=$powerTimeout callback=${multi.name}")
         } catch (failure: Throwable) {
             for (handle in powerHandles) runCatching { handle.unhook() }
             powerHandles.clear(); setPowerFeature(false)
@@ -198,11 +240,12 @@ class RootPolicyBackend(private val module: XposedModule) {
     private fun installPowerChords(loader: ClassLoader) {
         val added = mutableListOf<XposedInterface.HookHandle>()
         try {
-            val base = loader.loadClass("com.android.server.policy.KeyCombinationManager\$TwoKeysCombinationRule")
+            val base = loader.loadClass(RuntimeProfile.combinationBase(Build.VERSION.SDK_INT))
             val first = base.getDeclaredField("mKeyCode1").apply { isAccessible = true }
             val second = base.getDeclaredField("mKeyCode2").apply { isAccessible = true }
-            for ((suffix, partner, key) in listOf(Triple("6", Button.VOLUME_DOWN, 25), Triple("9", Button.VOLUME_UP, 24))) {
-                val type = loader.loadClass("com.android.server.policy.PhoneWindowManager\$$suffix")
+            for ((partner, key) in listOf(Button.VOLUME_DOWN to 25, Button.VOLUME_UP to 24)) {
+                val type = loader.loadClass(RuntimeProfile.combinationRule(Build.VERSION.SDK_INT, partner == Button.VOLUME_UP))
+                require(base.isAssignableFrom(type))
                 val execute = type.getDeclaredMethod("execute")
                 require(execute.returnType == Void.TYPE)
                 added += module.hook(execute).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept { chain ->
@@ -210,13 +253,14 @@ class RootPolicyBackend(private val module: XposedModule) {
                     try {
                         if (setOf(first.getInt(chain.thisObject), second.getInt(chain.thisObject)) == setOf(26, key) &&
                             peer != null && ownerUserActive && !disposed) synchronized(lock) {
-                            consumed = powerChord.accept(partner, SystemClock.uptimeMillis(), ZonedDateTime.now()) { queue.offer(it) }
+                            consumed = powerChord.accept(partner, SystemClock.uptimeMillis(), ZonedDateTime.now()) { enqueueAction(it) }
                         }
                     } catch (_: Throwable) { synchronized(lock) { powerChord.disconnect() } }
                     if (consumed) { diagnostic("RUNTIME_POWER_CHORD_DISPATCH partner=$partner"); null } else chain.proceed()
                 }
                 if (partner == Button.VOLUME_UP) {
                     val pre = type.getDeclaredMethod("preCondition")
+                    require(pre.returnType == Boolean::class.javaPrimitiveType)
                     added += module.hook(pre).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept { chain ->
                         val original = chain.proceed() as Boolean
                         val ready = try {
@@ -315,17 +359,24 @@ class RootPolicyBackend(private val module: XposedModule) {
                                             val bytes = requireNotNull(data.createByteArray())
                                             require(bytes.size in 1..PolicyWire.MAX_BINDER_BYTES)
                                             val mask = data.readInt(); val isRecording = data.readInt()
+                                            val readyCount = data.readInt(); require(readyCount in 0..500)
+                                            val readyRuleIds = (0 until readyCount).map {
+                                                requireNotNull(data.readString()).also { require(it.length in 1..128) }
+                                            }.toSet()
+                                            require(readyRuleIds.size == readyCount)
                                             require(data.dataAvail() == 0 && isRecording in 0..1 && mask ushr ActionKind.entries.size == 0)
                                             worker.post {
                                                 if (callback !== this || peer !== service || disposed) return@post
                                                 try {
                                                     require(version > revision)
                                                     val configuration = RuleCodec.decode(PolicyWire.binderText(bytes))
+                                                    require(readyRuleIds.all { id -> configuration.rules.any { it.id == id && it.enabled } })
                                                     val allowed = ActionKind.entries.filter { mask and (1 shl it.ordinal) != 0 }.toSet()
                                                     synchronized(lock) {
                                                         revision = version; recording = isRecording == 1
+                                                        hapticEnabled = configuration.hapticFeedback && configuration.enabled
                                                         val policy = PolicyConfiguration(configuration.rules, configuration.enabled, configuration.tier)
-                                                        val lease = BackendLease(version, Long.MAX_VALUE, true, allowed)
+                                                        val lease = BackendLease(version, Long.MAX_VALUE, true, allowed, readyRuleIds)
                                                         val plusTriggers = setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG).map { Trigger(Button.PLUS, it) }.toSet() +
                                                             if (dev.opluskeycontrol.BuildConfig.ADVANCED_INPUTS) setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER).map { Trigger(Button.PLUS, Gesture.CHORD, it) }.toSet() else emptySet()
                                                         session.configure(policy, configuration.timing, PolicyProof(Build.DISPLAY, plusTriggers, true), lease)
@@ -335,6 +386,7 @@ class RootPolicyBackend(private val module: XposedModule) {
                                                             PolicyProof(Build.DISPLAY, setOf(Button.VOLUME_UP, Button.VOLUME_DOWN).map { Trigger(Button.POWER, Gesture.CHORD, it) }.toSet(), true), lease)
                                                         worker.removeCallbacks(deadline)
                                                     }
+                                                    reconnectAttempts = 0
                                                 } catch (failure: Exception) { diagnostic("RUNTIME_CONFIG_FAILED", failure); drop() }
                                             }
                                         }
@@ -343,7 +395,7 @@ class RootPolicyBackend(private val module: XposedModule) {
                                             require(retry in 0..1 && data.dataAvail() == 0)
                                             worker.post { if (callback === this) {
                                                 drop()
-                                                if (retry == 1 && ++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+                                                if (retry == 1) scheduleReconnect()
                                             } }
                                         }
                                         else -> return false
@@ -355,18 +407,21 @@ class RootPolicyBackend(private val module: XposedModule) {
                                 }
                             }
                         }
-                        val recipient = IBinder.DeathRecipient {
-                            if (peer === service) drop()
-                        }
+                        val owner = this
+                        val recipient = IBinder.DeathRecipient { recoverConnection(owner, "RUNTIME_PEER_DIED") }
                         service.linkToDeath(recipient, 0)
                         peerDeath = recipient; peer = service; callback = endpoint
                         worker.removeCallbacks(bindTimeout)
                         PolicyBinder.send(service, PolicyBinder.HELLO) { it.writeStrongBinder(endpoint); it.writeInt(features) }
                         diagnostic("RUNTIME_BINDER_CONNECTED")
-                    } catch (failure: Exception) { diagnostic("RUNTIME_HELLO_FAILED", failure); drop() }
+                    } catch (failure: Exception) {
+                        diagnostic("RUNTIME_HELLO_FAILED", failure)
+                        drop()
+                        scheduleReconnect()
+                    }
                 }
-                override fun onServiceDisconnected(name: ComponentName) { if (connection === this) drop() }
-                override fun onBindingDied(name: ComponentName) { if (connection === this) drop() }
+                override fun onServiceDisconnected(name: ComponentName) = recoverConnection(this, "RUNTIME_SERVICE_DISCONNECTED")
+                override fun onBindingDied(name: ComponentName) = recoverConnection(this, "RUNTIME_BINDING_DIED")
                 override fun onNullBinding(name: ComponentName) { if (connection === this) drop() }
             }
             connection = candidate
@@ -377,7 +432,7 @@ class RootPolicyBackend(private val module: XposedModule) {
         } catch (failure: Exception) { diagnostic("RUNTIME_BIND_FAILED", failure); drop() }
         finally {
             connecting.set(false)
-            if (!disposed && peer == null && connection == null && ++reconnectAttempts < 5) worker.postDelayed(reconnect, 1000)
+            if (!disposed && peer == null && connection == null) scheduleReconnect()
         }
     }
     private fun schedule() {
@@ -385,30 +440,53 @@ class RootPolicyBackend(private val module: XposedModule) {
         session.nextDeadline()?.let { worker.postAtTime(deadline, it) }
     }
     private fun dispatch(actions: List<PolicyDecision.Replace>) {
-        for (action in actions) if (!queue.offer(action)) {
-            session.disconnect() // bounded queue; never block input policy
+        val feedback = session.takeRecognitions().toMutableList()
+        for (action in actions) {
+            val confirm = feedback.remove(action)
+            if (!queue.offer(Dispatch(action, feedback = confirm))) session.disconnect()
         }
+        for (cue in feedback) queue.offer(Dispatch(cue, execute = false))
     }
     private fun writeActions() {
         while (!disposed) {
-            val action = try { queue.take() } catch (_: InterruptedException) { return }
+            val pending = try { queue.take() } catch (_: InterruptedException) { return }
+            val action = pending.action
             val version = action.session; val id = action.rule.id
             val target = peer ?: continue
             val endpoint = callback ?: continue
             if (version != revision) continue
             try {
+                if (pending.feedback && hapticEnabled) {
+                    val identity = Binder.clearCallingIdentity()
+                    try {
+                        val vibrator = context?.getSystemService(VibratorManager::class.java)?.defaultVibrator
+                        vibrator?.vibrate(VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE),
+                            VibrationAttributes.createForUsage(VibrationAttributes.USAGE_HARDWARE_FEEDBACK))
+                        diagnostic("RUNTIME_HAPTIC_SENT")
+                    } catch (failure: Exception) { diagnostic("RUNTIME_HAPTIC_FAILED", failure) }
+                    finally { Binder.restoreCallingIdentity(identity) }
+                }
+                if (!pending.execute) continue
                 PolicyBinder.send(target, PolicyBinder.ACTION) {
                     it.writeStrongBinder(endpoint); it.writeLong(version); it.writeString(id)
                 }
                 if (action.rule.action.kind == ActionKind.RECORD_TOGGLE) {
                     val ctx = context ?: continue
-                    val intent = Intent().setComponent(ComponentName("dev.opluskeycontrol", "dev.opluskeycontrol.actions.RecorderService"))
+                    val intent = Intent().setComponent(ComponentName("dev.opluskeycontrol", "dev.opluskeycontrol.actions.RecorderService")).putExtra("recognitionFeedback", true)
                     if (recording) ctx.startService(intent.setAction(RecorderService.STOP))
                     else ctx.startForegroundService(intent.setAction(RecorderService.TOGGLE).putExtra("seconds", action.rule.action.durationSeconds)
                         .putExtra("originButton", action.rule.trigger.button.name).putExtra("originPartner", action.rule.trigger.partner?.name)
                         .putExtra("originGesture", action.rule.trigger.gesture.name).putExtra("originRule", action.rule.id))
                 }
-            } catch (_: Exception) { if (peer === target) drop() }
+            } catch (_: Exception) {
+                worker.post {
+                    if (peer === target) {
+                        diagnostic("RUNTIME_ACTION_CHANNEL_FAILED")
+                        drop()
+                        scheduleReconnect()
+                    }
+                }
+            }
         }
     }
     private fun drop() {
@@ -417,7 +495,7 @@ class RootPolicyBackend(private val module: XposedModule) {
         val oldConnection: ServiceConnection?
         val oldDeath: IBinder.DeathRecipient?
         synchronized(lock) {
-            session.disconnect(); power.disconnect(); powerChord.disconnect(); revision = 0; queue.clear(); worker.removeCallbacks(deadline)
+            hapticEnabled = false; session.disconnect(); power.disconnect(); powerChord.disconnect(); revision = 0; queue.clear(); worker.removeCallbacks(deadline)
             old = peer; oldCallback = callback; oldConnection = connection; oldDeath = peerDeath
             peer = null; callback = null; connection = null; peerDeath = null
         }

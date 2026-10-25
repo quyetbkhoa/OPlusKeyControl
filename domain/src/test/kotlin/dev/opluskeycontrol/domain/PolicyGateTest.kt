@@ -36,4 +36,31 @@ class PolicyGateTest {
         g.verify(PolicyProof("tested-firmware", setOf(power), true)); g.configure(PolicyConfiguration(listOf(rule.copy(trigger = power)), true, Tier.ROOT))
         assertEquals(PolicyDecision.PassThrough, g.decision(t = power))
     }
+    @Test fun oneUnverifiedActivityDoesNotBlockAnotherGesture() {
+        val double = rule.copy(id = "verified-double", action = Action(ActionKind.ACTIVITY, "test.app", "test.app.Double"))
+        val single = double.copy(id = "unverified-single", trigger = Trigger(Button.PLUS, Gesture.SINGLE))
+        val g = ready()
+        g.configure(PolicyConfiguration(listOf(double, single), true, Tier.ROOT))
+        g.verify(PolicyProof("tested-firmware", setOf(double.trigger, single.trigger), true))
+        g.attach(BackendLease(1, 2000, true, setOf(ActionKind.ACTIVITY), setOf(double.id)))
+        assertEquals(PolicyDecision.Replace(1, double), g.decision(t = double.trigger))
+        assertEquals(PolicyDecision.PassThrough, g.decision(t = single.trigger))
+        g.attach(BackendLease(2, 2000, true, setOf(ActionKind.ACTIVITY), setOf(double.id, single.id)))
+        assertEquals(PolicyDecision.Replace(2, single), g.decision(t = single.trigger))
+    }
+    @Test fun unreadyWinnerDoesNotFallBackToAnotherAction() {
+        val winner = rule.copy(id = "winner", priority = 10)
+        val fallback = rule.copy(id = "fallback", priority = 0)
+        val g = ready()
+        g.configure(PolicyConfiguration(listOf(winner, fallback), true, Tier.ROOT))
+        g.attach(BackendLease(1, 2000, true, setOf(ActionKind.TORCH_TOGGLE), setOf(fallback.id)))
+        assertEquals(PolicyDecision.PassThrough, g.decision())
+    }
+    @Test fun emptyReadinessAndRevocationBlockPreviouslyReadyRule() {
+        val g = ready()
+        g.attach(BackendLease(1, 2000, true, setOf(ActionKind.TORCH_TOGGLE), emptySet()))
+        assertEquals(PolicyDecision.PassThrough, g.decision())
+        g.attach(BackendLease(2, 2000, true, emptySet(), setOf(rule.id)))
+        assertEquals(PolicyDecision.PassThrough, g.decision())
+    }
 }

@@ -2,6 +2,7 @@ package dev.opluskeycontrol
 
 import android.app.Application
 import dev.opluskeycontrol.actions.ActionExecutor
+import dev.opluskeycontrol.actions.ActionFeedback
 import dev.opluskeycontrol.storage.RuleStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,7 +15,8 @@ import dev.opluskeycontrol.input.PolicyBridge
 class KeyControlApp : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val store by lazy { RuleStore(this, scope) }
-    val actions by lazy { ActionExecutor(this) }
+    val feedback by lazy { ActionFeedback(this) { store.config.value.hapticFeedback } }
+    val actions by lazy { ActionExecutor(this) { feedback.confirm() } }
     val bridge by lazy { PolicyBridge(this) }
     val visible = MutableStateFlow(false)
     val permissionRevision = MutableStateFlow(0)

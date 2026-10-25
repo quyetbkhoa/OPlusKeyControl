@@ -32,36 +32,36 @@ import dev.opluskeycontrol.R
 import dev.opluskeycontrol.domain.ActionKind
 
 object OpColors {
-    val Background = Color(0xFF101216)
-    val Surface = Color(0xFF181C22)
-    val Border = Color(0xFF303844)
-    val Accent = Color(0xFF82B3FF)
+    val Background = Color(0xFF000000)
+    val Surface = Color(0xFF1A1A1A)
+    val Border = Color(0xFF333333)
+    val Accent = Color(0xFF8AB4F8)
     val Mint = Accent // compatibility for UI call sites; primary accent is blue
-    val Success = Color(0xFF86D5B1)
-    val Blue = Color(0xFF82B3FF)
-    val Amber = Color(0xFFE9BD76)
-    val Red = Color(0xFFFF969B)
+    val Success = Color(0xFF8ED6A8)
+    val Blue = Color(0xFF8AB4F8)
+    val Amber = Color(0xFFEAC36B)
+    val Red = Color(0xFFFFB4AB)
     val Purple = Color(0xFFADBFFF)
-    val Muted = Color(0xFFA8B2C1)
+    val Muted = Color(0xFFA0A0A0)
 }
 
 @Composable fun OPlusTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = darkColorScheme(
-        primary = OpColors.Mint, onPrimary = OpColors.Background, primaryContainer = Color(0xFF20334F),
-        onPrimaryContainer = OpColors.Mint, secondary = OpColors.Blue, onSecondary = OpColors.Background,
+        primary = OpColors.Accent, onPrimary = OpColors.Background, primaryContainer = Color(0xFF20364F),
+        onPrimaryContainer = Color(0xFFCDE1FF), secondary = OpColors.Blue, onSecondary = OpColors.Background,
         secondaryContainer = Color(0xFF253042), onSecondaryContainer = OpColors.Blue,
-        background = OpColors.Background, onBackground = Color(0xFFF1F3F7),
-        surface = OpColors.Surface, onSurface = Color(0xFFF1F3F7), surfaceVariant = Color(0xFF222832),
-        onSurfaceVariant = OpColors.Muted, outline = OpColors.Border, error = OpColors.Red
+        background = OpColors.Background, onBackground = Color(0xFFE8E8E8),
+        surface = OpColors.Surface, onSurface = Color(0xFFE8E8E8), surfaceVariant = Color(0xFF242424),
+        onSurfaceVariant = OpColors.Muted, outline = Color(0xFF717171), error = OpColors.Red
     ), typography = Typography(
-        headlineMedium = androidx.compose.ui.text.TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold),
-        titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-        titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+        headlineMedium = androidx.compose.ui.text.TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold),
+        titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+        titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
         bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
-        bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-        bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
+        bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
+        bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, lineHeight = 20.sp),
         labelLarge = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
-    ), shapes = Shapes(small = RoundedCornerShape(8.dp), medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(16.dp)), content = content)
+    ), shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp)), content = content)
 }
 
 fun ActionKind.tint(): Color = if (this == ActionKind.RECORD_TOGGLE) OpColors.Red else OpColors.Accent
@@ -101,26 +101,26 @@ fun ActionKind.glyph() = when (this) {
 }
 
 @Composable fun IconTile(glyph: String, tint: Color = OpColors.Mint, size: Dp = 36.dp) {
-    Surface(shape=RoundedCornerShape(8.dp),color=tint.copy(alpha=.08f),modifier=Modifier.size(size)) {
+    Surface(shape=RoundedCornerShape(12.dp),color=tint.copy(alpha=.08f),modifier=Modifier.size(size)) {
         Box(contentAlignment=Alignment.Center) { OpGlyph(glyph,tint,size*.52f) }
     }
 }
 @Composable fun OpCard(modifier: Modifier = Modifier, selected: Boolean = false, tint: Color = OpColors.Mint, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier.fillMaxWidth().widthIn(max=720.dp),color=if(selected) tint.copy(alpha=.07f) else OpColors.Surface,
-        shape=RoundedCornerShape(12.dp),border=if(selected) BorderStroke(1.dp,tint.copy(alpha=.7f)) else null) {
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
+        shape=RoundedCornerShape(20.dp),border=if(selected) BorderStroke(1.dp,tint.copy(alpha=.7f)) else null) {
+        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp),content=content)
     }
 }
 @Composable fun StatusChip(text: String, tint: Color = OpColors.Mint) {
-    Surface(color=tint.copy(alpha=.10f),shape=RoundedCornerShape(6.dp)) {
+    Surface(color=tint.copy(alpha=.10f),shape=RoundedCornerShape(10.dp)) {
         Text(text,Modifier.padding(horizontal=8.dp,vertical=4.dp),color=tint,style=MaterialTheme.typography.bodySmall)
     }
 }
-@Composable fun SectionTitle(text: String) { Text(text,style=MaterialTheme.typography.titleMedium,color=OpColors.Muted,modifier=Modifier.fillMaxWidth().padding(top=12.dp,bottom=4.dp)) }
+@Composable fun SectionTitle(text: String) { Text(text,style=MaterialTheme.typography.titleMedium,color=OpColors.Muted,modifier=Modifier.fillMaxWidth().padding(top=8.dp,bottom=2.dp)) }
 @Composable fun OpRow(title: String, subtitle: String? = null, glyph: String = "file", tint: Color = OpColors.Mint, onClick: (() -> Unit)? = null, trailing: @Composable (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier).heightIn(min=56.dp).padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier).heightIn(min=48.dp).padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         OpGlyph(glyph,tint,24.dp)
-        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
             Text(title,style=MaterialTheme.typography.titleMedium)
             if(!subtitle.isNullOrBlank()) Text(subtitle,style=MaterialTheme.typography.bodyMedium,color=OpColors.Muted)
         }

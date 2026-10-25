@@ -17,15 +17,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.core.graphics.drawable.toBitmap
 import dev.opluskeycontrol.R
 import dev.opluskeycontrol.discovery.*
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
-fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, String?) -> Unit) {
+fun AppPicker(activityMode: Boolean, allowActivitySelection: Boolean = false, onClose: () -> Unit, onSelect: (AppEntry, String?) -> Unit) {
     val context = LocalContext.current
     val backendConfig by (context.applicationContext as dev.opluskeycontrol.KeyControlApp).store.config.collectAsState()
     val catalog = remember { AppCatalog(context) }
@@ -37,7 +37,7 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
     var advanced by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
     var revision by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
+    var launchable by remember { mutableStateOf<Set<String>>(emptySet()) }
     BackHandler { if (selected != null) { selected = null; query = "" } else onClose() }
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() { override fun onReceive(c: Context?, i: Intent?) { revision++ } }
@@ -45,14 +45,18 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
         context.registerReceiver(receiver, filter)
         onDispose { context.unregisterReceiver(receiver) }
     }
-    LaunchedEffect(revision) { apps = null; error = false; runCatching { catalog.apps() }.onSuccess { apps = it }.onFailure { error = true }; selected = null; activities = null }
+    LaunchedEffect(revision) { apps = null; error = false; runCatching {
+        val entries = catalog.apps()
+        launchable = withContext(Dispatchers.IO) { entries.filter { context.packageManager.getLaunchIntentForPackage(it.packageName) != null }.map { it.packageName }.toSet() }
+        entries
+    }.onSuccess { apps = it }.onFailure { error = true }; selected = null; activities = null }
     LaunchedEffect(selected) { activities = null; error = false; selected?.let { app -> runCatching { catalog.activities(app.packageName) }.onSuccess { activities = it }.onFailure { error = true; activities = emptyList() } } }
     Scaffold(topBar={OpAppBar(stringResource(if(selected!=null) R.string.choose_activity else R.string.choose_app),
         onBack={if(selected!=null) {selected=null;query=""} else onClose()}) {
         TextButton(onClick={revision++}) {Text(stringResource(R.string.refresh))}
     }}) { padding ->
         Box(Modifier.padding(padding).fillMaxSize(),contentAlignment=Alignment.TopCenter) {
-            Column(Modifier.widthIn(max=840.dp).fillMaxSize().imePadding().padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.widthIn(max=840.dp).fillMaxSize().imePadding().padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 if(selected!=null) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                     AppIcon(catalog,selected!!.packageName)
                     Column(Modifier.weight(1f)) {
@@ -70,21 +74,21 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
                 if(!error && (apps==null || (selected!=null && activities==null))) LinearProgressIndicator(Modifier.fillMaxWidth())
                 LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(0.dp)) {
                     if(selected==null) {
-                        val filtered=apps.orEmpty().filter {(system || !it.system) && (it.label.contains(query,true) || it.packageName.contains(query,true))}
+                        val filtered=apps.orEmpty().filter {(system || !it.system || it.packageName in launchable) && (it.label.contains(query,true) || it.packageName.contains(query,true))}
                         if(!error && apps!=null && filtered.isEmpty()) item { Text(stringResource(R.string.no_results),Modifier.padding(vertical=24.dp),color=OpColors.Muted) }
                         items(filtered,key={it.packageName}) { app ->
                             val choose={
                                 if(activityMode) {selected=app;query=""}
-                                else if(context.packageManager.getLaunchIntentForPackage(app.packageName)!=null) onSelect(app,null) else error=true
+                                else if(app.packageName in launchable) onSelect(app,null) else {selected=app;query=""}
                             }
                             Row(Modifier.fillMaxWidth().clickable(onClick=choose).heightIn(min=76.dp).padding(vertical=12.dp),
                                 verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
                                 AppIcon(catalog,app.packageName)
                                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                     Text(app.label,style=MaterialTheme.typography.titleMedium)
-                                    Text(app.packageName,style=MaterialTheme.typography.bodySmall,color=OpColors.Muted,maxLines=1,overflow=TextOverflow.Ellipsis)
+
                                 }
-                                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Outlined.KeyboardArrowRight,null,tint=OpColors.Muted)
+                                if(allowActivitySelection) TextButton(onClick={selected=app;query=""}) {Text(stringResource(R.string.ux_screens))} else Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight,null,tint=OpColors.Muted)
                             }
                             HorizontalDivider(color=OpColors.Border.copy(alpha=.6f))
                         }
@@ -96,13 +100,13 @@ fun AppPicker(activityMode: Boolean, onClose: () -> Unit, onSelect: (AppEntry, S
                         items(filtered,key={it.name}) { activity ->
                             val selectable=activity.status in setOf(Launchability.LAUNCHER,Launchability.EXPORTED_UNVERIFIED) ||
                                 (activity.status==Launchability.INTERNAL && backendConfig.tier==dev.opluskeycontrol.domain.Tier.ROOT)
-                            Column(Modifier.fillMaxWidth().clickable(enabled=selectable) {onSelect(selected!!,activity.name)}.padding(vertical=16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.fillMaxWidth().clickable(enabled=selectable) {onSelect(selected!!,activity.name)}.heightIn(min=56.dp).padding(vertical=16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Text(activity.label,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,color=if(selectable) MaterialTheme.colorScheme.onSurface else OpColors.Muted)
-                                    TextButton(enabled=selectable,onClick={onSelect(selected!!,activity.name)}) {Text(stringResource(R.string.select))}
+                                    if(selectable) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight,null,tint=OpColors.Muted)
                                 }
-                                Text(activity.name,style=MaterialTheme.typography.bodySmall,color=OpColors.Muted)
-                                StatusChip(stringResource(activity.status.label()),when(activity.status) {
+                                if(advanced || filtered.count { it.label == activity.label } > 1) Text(if(advanced) activity.name else activity.name.substringAfterLast('.'),style=MaterialTheme.typography.bodySmall,color=OpColors.Muted)
+                                if(advanced || !selectable) StatusChip(stringResource(activity.status.label()),when(activity.status) {
                                     Launchability.LAUNCHER -> OpColors.Success
                                     Launchability.EXPORTED_UNVERIFIED -> OpColors.Accent
                                     Launchability.INTERNAL -> OpColors.Amber

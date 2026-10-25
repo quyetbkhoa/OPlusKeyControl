@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class ActionExecutor(private val context: Context) {
+class ActionExecutor(private val context: Context, private val onAccepted: () -> Unit = {}) {
     val message = MutableStateFlow<Int?>(null)
     val torchReady = MutableStateFlow(false)
     val busy = MutableStateFlow(false)
@@ -31,7 +31,7 @@ class ActionExecutor(private val context: Context) {
             override fun onTorchModeUnavailable(id: String) { available[id] = false; torchReady.value = available.values.any { it } }
         }, Handler(Looper.getMainLooper()))
     }
-    suspend fun execute(action: Action, visibleActivity: Boolean = false, rootAuthorized: Boolean = false) {
+    suspend fun execute(action: Action, visibleActivity: Boolean = false, rootAuthorized: Boolean = false, confirmation: Boolean = true) {
         if (!mutex.tryLock()) { message.value = R.string.action_busy; return }
         busy.value = true
         try {
@@ -42,22 +42,26 @@ class ActionExecutor(private val context: Context) {
                         cameras.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK }
                     if (id == null || available[id] == false) { message.value = R.string.torch_unavailable; return }
                     cameras.setTorchMode(id, when (action.kind) { ActionKind.TORCH_ON -> true; ActionKind.TORCH_OFF -> false; else -> !(torch[id] ?: false) })
-                    message.value = R.string.action_requested
+                    message.value = null
+                    if (confirmation) onAccepted()
                 }
                 ActionKind.APP -> {
                     if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { message.value = R.string.unlock_required; return }
                     val intent = context.packageManager.getLaunchIntentForPackage(requireNotNull(action.packageName))
                     if (intent == null) { message.value = R.string.app_unavailable; return }
                     if (rootAuthorized) {
-                        message.value = if (intent.component?.let { RootActivityLauncher.launch(context, it) } == true) R.string.launch_requested else R.string.action_failed
-                    } else { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); message.value = R.string.launch_requested }
+                        val success = intent.component?.let { RootActivityLauncher.launch(context, it) } == true
+                        message.value = if (success) null else R.string.action_failed
+                        if (success && confirmation) onAccepted()
+                    } else { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); message.value = null; if (confirmation) onAccepted() }
                 }
                 ActionKind.ACTIVITY -> {
                     val component = ComponentName(requireNotNull(action.packageName), requireNotNull(action.activity))
                     if (rootAuthorized) {
                         val success = RootActivityLauncher.launch(context, component)
-                        message.value = if (success) R.string.launch_requested else R.string.action_failed
+                        message.value = if (success) null else R.string.action_failed
                         if (success && visibleActivity) ActionProofs.record(context, action)
+                        if (success && confirmation) onAccepted()
                     }
                     else {
                         @Suppress("DEPRECATION")
@@ -65,12 +69,14 @@ class ActionExecutor(private val context: Context) {
                         if (!visibleActivity || !info.enabled || !info.applicationInfo.enabled || !info.exported || !info.permission.isNullOrBlank() ||
                             context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { message.value = R.string.activity_unverified; return }
                         context.startActivity(Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        message.value = R.string.launch_requested
+                        message.value = null
+                        if (confirmation) onAccepted()
                     }
                 }
                 ActionKind.STOCK_CAMERA_CAPTURE -> {
-                    val success = if (rootAuthorized) openStockCameraRoot() else openStockCamera()
-                    message.value = if (success) R.string.launch_requested else R.string.camera_unavailable
+                    val success = if (rootAuthorized) openStockCameraRoot() else openStockCamera(confirmation)
+                    message.value = if (success) null else R.string.camera_unavailable
+                    if (success && rootAuthorized && confirmation) onAccepted()
                 }
                 ActionKind.RECORD_TOGGLE -> {
                     if (RecorderService.recording.value) context.startService(Intent(context, RecorderService::class.java).setAction(RecorderService.STOP))
@@ -98,7 +104,7 @@ class ActionExecutor(private val context: Context) {
         }
     }
     /** Separate, honestly labelled preview: no shutter is fired or claimed. */
-    fun openStockCamera(): Boolean = runCatching {
+    fun openStockCamera(confirmation: Boolean = true): Boolean = runCatching {
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
         val action = if (locked) MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE else MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
         val intent = Intent(action)
@@ -108,6 +114,7 @@ class ActionExecutor(private val context: Context) {
         // Require an unambiguous stock handler; never use an arbitrary third-party camera.
         val resolved = candidates.singleOrNull() ?: return false
         context.startActivity(intent.setComponent(ComponentName(resolved.activityInfo.packageName, resolved.activityInfo.name)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        if (confirmation) onAccepted()
         true
     }.getOrDefault(false)
 }

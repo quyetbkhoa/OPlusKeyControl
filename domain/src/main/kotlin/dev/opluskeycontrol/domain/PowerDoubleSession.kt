@@ -39,6 +39,16 @@ class PowerDoubleSession {
     fun maxPressCount(original: Int, now: Long, local: ZonedDateTime): Int =
         if (gate.decide(trigger, firmware, now, local) is PolicyDecision.Replace) maxOf(original, 5) else original
 
+    /** API 37 reports ordinary completed presses through SingleKeyGestureEvent. */
+    fun acceptGesture(type: Int, action: Int, count: Int, downTime: Long, displayId: Int,
+                      now: Long, local: ZonedDateTime, enqueue: (PolicyDecision.Replace) -> Boolean): Boolean {
+        if (type != 0 || action != 1) {
+            if (type != 0 || action != 0) cancel()
+            return false
+        }
+        return accept(count, downTime, displayId, now, local, enqueue)
+    }
+
     fun accept(count: Int, downTime: Long, displayId: Int, now: Long, local: ZonedDateTime,
                enqueue: (PolicyDecision.Replace) -> Boolean): Boolean {
         val key = downTime to displayId

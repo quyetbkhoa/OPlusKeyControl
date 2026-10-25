@@ -27,6 +27,24 @@ class PlusPolicySessionTest {
         assertEquals("DOUBLE", s.event(300, Edge.UP, 250).actions.single().rule.id)
         assertTrue(s.advance(1000, local).isEmpty())
     }
+    @Test fun verifiedDoubleWorksWhileActivityChordAwaitsProofThenChordCanBecomeReady() {
+        val double = Rule("double-activity", Trigger(Button.PLUS, Gesture.DOUBLE), Action(ActionKind.ACTIVITY, "test.app", "test.app.Scan"))
+        val chord = Rule("chord-activity", Trigger(Button.PLUS, Gesture.CHORD, Button.VOLUME_UP), Action(ActionKind.ACTIVITY, "test.app", "test.app.Benchmark"))
+        val s = PlusPolicySession(plusVolumeChords = true)
+        val policy = PolicyConfiguration(listOf(double, chord), true, Tier.ROOT)
+        val proof = PolicyProof("firmware", setOf(double.trigger, chord.trigger), true)
+        s.configure(policy, Timing(), proof, BackendLease(1, 10000, true, setOf(ActionKind.ACTIVITY), setOf(double.id)))
+        s.event(100, Edge.DOWN); s.event(150, Edge.UP); s.event(250, Edge.DOWN, 250)
+        assertEquals(double, s.event(300, Edge.UP, 250).actions.single().rule)
+        s.configure(policy, Timing(), proof, BackendLease(2, 10000, true, setOf(ActionKind.ACTIVITY), setOf(double.id, chord.id)))
+        s.event(1000, Edge.DOWN, 1000)
+        val partner = s.acceptPartner(Button.VOLUME_UP, PolicyEvent(2, 1050, 1050, Edge.DOWN), 1050, local)
+        assertTrue(partner.consume)
+        assertEquals(chord, partner.actions.single().rule)
+        s.acceptPartner(Button.VOLUME_UP, PolicyEvent(2, 1050, 1100, Edge.UP), 1100, local)
+        assertTrue(s.event(1150, Edge.UP, 1000).actions.isEmpty())
+        assertTrue(s.advance(2000, local).isEmpty())
+    }
     @Test fun longDoesNotAlsoClick() {
         val s = session(); s.event(100, Edge.DOWN); assertEquals("LONG", s.advance(700, local).single().rule.id)
         assertTrue(s.event(800, Edge.UP).actions.isEmpty()); assertTrue(s.advance(1500, local).isEmpty())

@@ -43,7 +43,7 @@ public final class VectorProbe extends XposedModule {
     }
 
     private synchronized void attachRuntime(ClassLoader loader) {
-        if (!BuildConfig.POLICY_RUNTIME || android.os.Build.VERSION.SDK_INT != 36) return;
+        if (!BuildConfig.POLICY_RUNTIME || android.os.Build.VERSION.SDK_INT < 36) return;
         try {
             Log.w("OPlusKeyControl", "RUNTIME_ENTRY loader=" + loader.getClass().getName());
             if (runtime == null) runtime = new RootPolicyBackend(this);

@@ -7,7 +7,7 @@ import java.time.ZonedDateTime
  */
 data class PolicyProof(val firmware: String, val allowed: Set<Trigger>, val verified: Boolean)
 data class BackendLease(val session: Long, val expiresAtMs: Long, val connected: Boolean,
-    val readyActions: Set<ActionKind> = emptySet())
+    val readyActions: Set<ActionKind> = emptySet(), val readyRuleIds: Set<String>? = null)
 data class PolicyConfiguration(val rules: List<Rule>, val enabled: Boolean, val tier: Tier)
 
 sealed interface PolicyDecision {
@@ -22,7 +22,7 @@ class PolicyGate(private val allowedButtons: Set<Button> = setOf(Button.PLUS), p
     @Volatile private var configuration = PolicyConfiguration(emptyList(), false, Tier.BASIC)
     fun configure(value: PolicyConfiguration) { configuration = value.copy(rules = value.rules.toList()) }
     fun verify(value: PolicyProof) { proof = value.copy(allowed = value.allowed.toSet()) }
-    fun attach(value: BackendLease) { require(value.session > 0); lease = value.copy(readyActions = value.readyActions.toSet()) }
+    fun attach(value: BackendLease) { require(value.session > 0); lease = value.copy(readyActions = value.readyActions.toSet(), readyRuleIds = value.readyRuleIds?.toSet()) }
     fun disconnect() { lease = null }
     fun emergencyDisable() { lease = null; configuration = configuration.copy(enabled = false) }
 
@@ -37,7 +37,8 @@ class PolicyGate(private val allowedButtons: Set<Button> = setOf(Button.PLUS), p
         if (trigger.button == Button.POWER && trigger.gesture != Gesture.CHORD && (!semanticPowerDouble || trigger.gesture != Gesture.DOUBLE)) return PolicyDecision.PassThrough
         if (trigger.gesture == Gesture.CHORD && !((plusVolumeChords && trigger.isPlusChord()) || (semanticPowerChords && trigger.isPowerVolumeChord()))) return PolicyDecision.PassThrough
         return when (val resolution = RuleResolver.resolve(config.rules, trigger, localTime)) {
-            is Resolution.Match -> if (resolution.rule.action.kind in currentLease.readyActions)
+            is Resolution.Match -> if (resolution.rule.action.kind in currentLease.readyActions &&
+                (currentLease.readyRuleIds == null || resolution.rule.id in currentLease.readyRuleIds))
                 PolicyDecision.Replace(currentLease.session, resolution.rule) else PolicyDecision.PassThrough
             else -> PolicyDecision.PassThrough
         }
