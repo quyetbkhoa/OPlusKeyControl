@@ -64,3 +64,14 @@ per-rule readiness work is carried forward, without changes by this UI task.
 ## Compact refinement — 2026-10-25
 
 User requested tighter spacing and slightly rounder components. Cards use 20dp corners, 12dp internal padding and 8dp list gaps. Rows retain at least 48dp touch targets; utility entries use horizontal rows instead of tall tiles.
+
+## Grouped controls refinement — 2026-10-25
+
+User requested app launch and Activity launch as distinct action categories;
+Activity selection starts with an app list and then its Activity list, with no
+small Screens shortcut. Every Plus gesture (single, double, triple, long) and
+Power double/triple remains visible, including Not assigned slots. Each key
+uses one container with horizontal dividers. Actual connection states use green
+for connected, red for disconnected and amber for checking. Header uses Button
+shortcuts with Active/Paused state. Compact type: title 20sp, row 15sp, supporting
+13sp, metadata 12sp; maintain minimum 48dp touch targets.

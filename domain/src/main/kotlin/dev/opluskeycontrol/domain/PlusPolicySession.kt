@@ -13,7 +13,7 @@ data class PolicyOutcome(val consume: Boolean, val actions: List<PolicyDecision.
  */
 class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = Tier.ROOT, private val plusVolumeChords: Boolean = false) {
     init { require(button != Button.POWER) }
-    private val triggers = setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG).map { Trigger(button, it) }.toSet()
+    private val triggers = setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG, Gesture.TRIPLE).map { Trigger(button, it) }.toSet()
     private val chordTriggers = if (plusVolumeChords && button == Button.PLUS)
         setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER).map { Trigger(Button.PLUS, Gesture.CHORD, it) }.toSet() else emptySet()
     private val allTriggers = triggers + chordTriggers
@@ -24,9 +24,13 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     private var ownedDown = false
     private var draining = false
     private var connected = false
+    private data class RecognitionPolicy(val configuration: PolicyConfiguration, val timing: Timing, val proof: PolicyProof)
+    private var recognitionPolicy: RecognitionPolicy? = null
     private var feedbackGiven = false
     private var feedbackDeadline: Long? = null
     private val recognitions = mutableListOf<PolicyDecision.Replace>()
+    private val powerChordPresses = mutableListOf<Long>()
+    fun takePowerChordPresses(): List<Long> = powerChordPresses.toList().also { powerChordPresses.clear() }
     fun takeRecognitions(): List<PolicyDecision.Replace> = recognitions.toList().also { recognitions.clear() }
     private fun recognize(actions: List<PolicyDecision.Replace>) {
         if (!feedbackGiven && actions.isNotEmpty()) { feedbackGiven = true; feedbackDeadline = null; recognitions += actions.first() }
@@ -43,9 +47,20 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
     private val partnerDecisions = LinkedHashMap<Pair<Button, PolicyEvent>, Boolean>()
 
     fun configure(configuration: PolicyConfiguration, timing: Timing, proof: PolicyProof, lease: BackendLease) {
+        val next = RecognitionPolicy(configuration.copy(rules = configuration.rules.toList()), timing,
+            proof.copy(allowed = proof.allowed.toSet()))
+        if (connected && recognitionPolicy == next) {
+            // Refresh authority/readiness without discarding a physical press or
+            // its pending single/double deadline. Resolution uses the new lease.
+            gate.attach(lease)
+            return
+        }
+        recognitionPolicy = next
         recognitions.clear(); feedbackDeadline = null; feedbackGiven = false
         precedingVolumes.clear()
-        engine = GestureEngine(allTriggers, timing)
+        // Triple counting adds a wait after the second click only when explicitly mapped.
+        val tripleEnabled = configuration.rules.any { it.enabled && it.trigger == Trigger(button, Gesture.TRIPLE) }
+        engine = GestureEngine(if (tripleEnabled) allTriggers else allTriggers.filterNot { it.gesture == Gesture.TRIPLE }.toSet(), timing)
         longThreshold = timing.longMs
         deferredLong = false; chordCommitted = false
         draining = ownedDown
@@ -105,7 +120,10 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
                 chordCommitted = true
                 partners[reverse.key] = reverse.value.copy(consume = false)
                 precedingVolumes.clear()
-                resolve(candidates, now, local)
+                resolve(candidates, now, local).also { actions ->
+                    if (reverse.key == Button.POWER && actions.any { it.rule.trigger.sameAs(chord) })
+                        powerChordPresses += reverse.value.downTime
+                }
             } else emptyList()
         } else emptyList()
         recognize(actions + reverseActions)
@@ -141,7 +159,7 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         val chord = chordTriggers.firstOrNull { it.partner == partner }
         if (chord == null || !connected || !ownedDown || draining || event.edge != Edge.DOWN || event.repeat != 0 ||
             gate.decide(chord, firmware, now, local) !is PolicyDecision.Replace) {
-            if (!ownedDown && connected && partner in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN) &&
+            if (!ownedDown && connected && partner in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER) &&
                 event.edge == Edge.DOWN && chord != null && gate.decide(chord, firmware, now, local) is PolicyDecision.Replace) {
                 if (event.repeat == 0) {
                     // Cancel pending Plus clicks but retain other physical Volume holds:
@@ -162,6 +180,8 @@ class PlusPolicySession(private val button: Button = Button.PLUS, tier: Tier = T
         partners[partner] = PartnerPress(event.deviceId, event.downTime)
         rememberPartner(key)
         val actions = due + resolve(candidates, now, local)
+        if (partner == Button.POWER && actions.any { it.rule.trigger.sameAs(chord) })
+            powerChordPresses += event.downTime
         recognize(actions)
         return PolicyOutcome(true, actions)
     }

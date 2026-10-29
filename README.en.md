@@ -7,9 +7,9 @@ apps, open shortcuts and record audio with familiar button gestures.
 
 ## Button mappings
 
-- **Plus button:** assign separate actions to single press, double press and long press.
-- **Power button:** assign an action to double press.
-- **Button combinations:** Plus + Volume Up/Down, Plus + Power and Power + Volume Up/Down.
+- **Plus button:** assign separate actions to single press, double press, triple press and long press.
+- **Power button:** assign actions to double press and triple press.
+- **Button combinations:** Plus + Volume Up, Plus + Volume Down and Plus + Power.
 - **Independent controls:** enable or disable individual mappings or use the master switch.
 - **Adjustable timing:** customize double-press, long-press and combination thresholds.
 

@@ -19,9 +19,10 @@ object Capabilities {
     // Rule preparation does not grant runtime authority to consume input.
     fun configurableTrigger(tier: Tier, trigger: Trigger): Boolean =
         BuildConfig.POLICY_RUNTIME && tier == Tier.ROOT &&
-            ((trigger.button == Button.PLUS && trigger.gesture in setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG)) ||
-                (BuildConfig.ADVANCED_INPUTS && (trigger == Trigger(Button.POWER, Gesture.DOUBLE) || trigger.isPlusChord() || trigger.isPowerVolumeChord())))
+            ((trigger.button == Button.PLUS && trigger.gesture in setOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG, Gesture.TRIPLE)) ||
+                (BuildConfig.ADVANCED_INPUTS && ((trigger.button == Button.POWER && trigger.gesture in setOf(Gesture.DOUBLE, Gesture.TRIPLE)) || trigger.isPlusChord())))
     fun featureFor(trigger: Trigger): Int = when {
+        trigger == Trigger(Button.POWER, Gesture.TRIPLE) -> dev.opluskeycontrol.input.PolicyBinder.POWER_TRIPLE
         trigger == Trigger(Button.POWER, Gesture.DOUBLE) -> dev.opluskeycontrol.input.PolicyBinder.POWER_DOUBLE
         trigger.isPlusChord() -> dev.opluskeycontrol.input.PolicyBinder.PLUS_VOLUME
         trigger.isPowerVolumeChord() -> dev.opluskeycontrol.input.PolicyBinder.POWER_VOLUME

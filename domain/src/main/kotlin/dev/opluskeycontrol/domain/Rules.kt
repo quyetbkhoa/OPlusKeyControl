@@ -4,7 +4,7 @@ import java.time.DayOfWeek
 import java.time.ZonedDateTime
 
 enum class Button { PLUS, VOLUME_UP, VOLUME_DOWN, POWER }
-enum class Gesture { SINGLE, DOUBLE, LONG, CHORD }
+enum class Gesture { SINGLE, DOUBLE, LONG, CHORD, TRIPLE }
 enum class Tier { BASIC, SHIZUKU, ROOT }
 enum class ActionKind { TORCH_TOGGLE, TORCH_ON, TORCH_OFF, APP, ACTIVITY, STOCK_CAMERA_CAPTURE, RECORD_TOGGLE }
 
@@ -19,7 +19,7 @@ data class Trigger(val button: Button, val gesture: Gesture, val partner: Button
     init {
         require((gesture == Gesture.CHORD) == (partner != null))
         require(partner != button)
-        require(button != Button.POWER || gesture in setOf(Gesture.DOUBLE, Gesture.CHORD))
+        require(button != Button.POWER || gesture in setOf(Gesture.DOUBLE, Gesture.TRIPLE, Gesture.CHORD))
         // Both-volume remains reserved; Power single/long still cannot be mapped.
         require(gesture != Gesture.CHORD || setOf(button, partner) != setOf(Button.VOLUME_UP, Button.VOLUME_DOWN))
     }

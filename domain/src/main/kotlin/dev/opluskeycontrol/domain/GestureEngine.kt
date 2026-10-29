@@ -10,26 +10,29 @@ data class Timing(val doubleMs: Long = 300, val longMs: Long = 600, val chordMs:
  * Serialized owner calls advance only at nextDeadline, never on a repeating idle timer.
  */
 class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timing = Timing()) {
-    private data class Press(val down: Long, var consumed: Boolean = false, val secondClick: Boolean = false)
+    private data class Press(val down: Long, var consumed: Boolean = false, val clickCount: Int = 1)
     private val held = mutableMapOf<Button, Press>()
-    private val pending = mutableMapOf<Button, Long>()
+    private data class Pending(val up: Long, val count: Int)
+    private val pending = mutableMapOf<Button, Pending>()
     private val lastUp = mutableMapOf<Button, Long>()
     private var owner: Pair<String, Int>? = null
     private var lastTime = Long.MIN_VALUE
+    private var lastEventTime = Long.MIN_VALUE
     private val suppressedLong = mutableSetOf<Button>()
     private fun supports(button: Button, gesture: Gesture) = !(gesture == Gesture.LONG && button in suppressedLong) && enabled.any { it.button == button && it.gesture == gesture }
     fun allowLongRecognition(button: Button, allow: Boolean) { if (allow) suppressedLong.remove(button) else suppressedLong.add(button) }
     fun canStartChord(modifier: Button, partner: Button): Boolean = held[modifier]?.consumed == false && partner !in held
-    fun reset() { held.clear(); pending.clear(); lastUp.clear(); owner = null; lastTime = Long.MIN_VALUE }
-    fun nextDeadline(): Long? = (pending.values.map { it + timing.doubleMs } +
+    fun reset() { held.clear(); pending.clear(); lastUp.clear(); owner = null; lastTime = Long.MIN_VALUE; lastEventTime = Long.MIN_VALUE }
+    fun nextDeadline(): Long? = (pending.values.map { it.up + timing.doubleMs } +
         held.filter { !it.value.consumed && supports(it.key, Gesture.LONG) }.values.map { it.down + timing.longMs }).minOrNull()
     fun advance(now: Long): List<Trigger> {
-        if (now < lastTime) { reset(); return emptyList() }
+        if (now < lastTime) return emptyList()
         lastTime = now
         val result = mutableListOf<Trigger>()
-        for ((button, at) in pending.toMap()) if (now >= at + timing.doubleMs) {
+        for ((button, at) in pending.toMap()) if (now >= at.up + timing.doubleMs) {
             pending.remove(button)
-            if (supports(button, Gesture.SINGLE)) result += Trigger(button, Gesture.SINGLE)
+            val gesture = if (at.count == 2) Gesture.DOUBLE else Gesture.SINGLE
+            if (supports(button, gesture)) result += Trigger(button, gesture)
         }
         for ((button, press) in held) if (!press.consumed && supports(button, Gesture.LONG) && now >= press.down + timing.longMs) {
             press.consumed = true
@@ -41,16 +44,18 @@ class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timin
     fun accept(event: ButtonEvent): List<Trigger> {
         val incoming = event.source to event.deviceId
         if (owner != null && owner != incoming) return emptyList()
-        if (event.edge == Edge.CANCEL || event.timeMs < lastTime) { reset(); return emptyList() }
+        if (event.edge == Edge.CANCEL || event.timeMs < lastEventTime) { reset(); return emptyList() }
         owner = incoming
-        val result = advance(event.timeMs).toMutableList()
+        lastEventTime = event.timeMs
+        val result = advance(maxOf(event.timeMs, lastTime)).toMutableList()
         if (event.repeat > 0) return result
         val button = event.button
         when (event.edge) {
             Edge.DOWN -> {
                 if (button in held || event.timeMs - (lastUp[button] ?: Long.MIN_VALUE / 2) < timing.debounceMs) return result
-                val secondClick = pending.remove(button) != null && supports(button, Gesture.DOUBLE)
-                held[button] = Press(event.timeMs, secondClick = secondClick)
+                val previous = pending.remove(button)
+                val clickCount = (previous?.count ?: 0) + 1
+                held[button] = Press(event.timeMs, clickCount = clickCount)
                 val chord = enabled.firstOrNull { it.gesture == Gesture.CHORD && button in setOf(it.button, it.partner) &&
                     held[it.button]?.consumed == false && held[it.partner]?.consumed == false &&
                     (button == it.partner || event.timeMs - held.getValue(it.partner!!).down <= timing.chordMs) }
@@ -66,9 +71,13 @@ class GestureEngine(private val enabled: Set<Trigger>, private val timing: Timin
                 val press = held.remove(button) ?: return result
                 lastUp[button] = event.timeMs
                 if (!press.consumed && !(event.timeMs - press.down >= timing.longMs && (button == Button.POWER || !supports(button, Gesture.LONG)))) {
-                    if (press.secondClick && supports(button, Gesture.DOUBLE)) result += Trigger(button, Gesture.DOUBLE)
-                    else if (supports(button, Gesture.DOUBLE)) pending[button] = event.timeMs
-                    else if (supports(button, Gesture.SINGLE)) result += Trigger(button, Gesture.SINGLE)
+                    when {
+                        press.clickCount >= 3 && supports(button, Gesture.TRIPLE) -> result += Trigger(button, Gesture.TRIPLE)
+                        supports(button, Gesture.TRIPLE) -> pending[button] = Pending(event.timeMs, press.clickCount)
+                        press.clickCount == 2 && supports(button, Gesture.DOUBLE) -> result += Trigger(button, Gesture.DOUBLE)
+                        supports(button, Gesture.DOUBLE) -> pending[button] = Pending(event.timeMs, 1)
+                        supports(button, Gesture.SINGLE) -> result += Trigger(button, Gesture.SINGLE)
+                    }
                 }
             }
             Edge.CANCEL -> Unit

@@ -9,6 +9,7 @@ import java.time.ZonedDateTime
  */
 class PowerDoubleSession {
     private val trigger = Trigger(Button.POWER, Gesture.DOUBLE)
+    private val triple = Trigger(Button.POWER, Gesture.TRIPLE)
     private val gate = PolicyGate(setOf(Button.POWER), semanticPowerDouble = true)
     private var firmware = ""
     private var device: Int? = null
@@ -18,14 +19,19 @@ class PowerDoubleSession {
     private var presses = 0
     private var timeout = 300L
     private val committed = LinkedHashSet<Pair<Long, Int>>()
+    private data class RecognitionPolicy(val configuration: PolicyConfiguration, val proof: PolicyProof, val timeout: Long)
+    private var recognitionPolicy: RecognitionPolicy? = null
 
     fun configure(configuration: PolicyConfiguration, proof: PolicyProof, lease: BackendLease, multiPressTimeout: Long) {
         require(multiPressTimeout in 100..1000)
+        val next = RecognitionPolicy(configuration.copy(rules = configuration.rules.toList()), proof.copy(allowed = proof.allowed.toSet()), multiPressTimeout)
+        if (recognitionPolicy == next) { gate.attach(lease); return }
+        recognitionPolicy = next
         firmware = proof.firmware; timeout = multiPressTimeout
         gate.configure(configuration); gate.verify(proof); gate.attach(lease)
         cancel()
     }
-    fun disconnect() { gate.disconnect(); cancel() }
+    fun disconnect() { recognitionPolicy = null; gate.disconnect(); cancel() }
     fun cancel() { device = null; down = 0; lastTime = 0; held = false; presses = 0 }
     fun observe(event: PolicyEvent) {
         if (event.edge == Edge.CANCEL || event.time < lastTime) { cancel(); return }
@@ -37,7 +43,7 @@ class PowerDoubleSession {
         lastTime = event.time
     }
     fun maxPressCount(original: Int, now: Long, local: ZonedDateTime): Int =
-        if (gate.decide(trigger, firmware, now, local) is PolicyDecision.Replace) maxOf(original, 5) else original
+        if (listOf(trigger, triple).any { gate.decide(it, firmware, now, local) is PolicyDecision.Replace }) maxOf(original, 5) else original
 
     /** API 37 reports ordinary completed presses through SingleKeyGestureEvent. */
     fun acceptGesture(type: Int, action: Int, count: Int, downTime: Long, displayId: Int,
@@ -52,10 +58,10 @@ class PowerDoubleSession {
     fun accept(count: Int, downTime: Long, displayId: Int, now: Long, local: ZonedDateTime,
                enqueue: (PolicyDecision.Replace) -> Boolean): Boolean {
         val key = downTime to displayId
-        if (count != 2) return false
+        if (count !in 2..3) return false
         if (key in committed) return true // duplicate callback: suppress OEM, no second dispatch
-        if (presses != 2 || held || downTime != down || now - lastTime !in 0..5000 || displayId < -1) return false
-        val action = gate.decide(trigger, firmware, now, local) as? PolicyDecision.Replace ?: return false
+        if (presses != count || held || downTime != down || now - lastTime !in 0..5000 || displayId < -1) return false
+        val action = gate.decide(if (count == 3) triple else trigger, firmware, now, local) as? PolicyDecision.Replace ?: return false
         if (!enqueue(action)) { disconnect(); return false }
         committed += key
         while (committed.size > 32) committed.remove(committed.first())

@@ -21,50 +21,60 @@ class VectorAuthorization(private val scope: CoroutineScope, private val apkPath
     private var job: Job? = null
     @Volatile private var process: Process? = null
     private val epoch = java.util.concurrent.atomic.AtomicLong()
-    fun start() {
+    @Synchronized fun start() {
         if (job?.isActive == true) return
         val token = epoch.incrementAndGet()
         state.value = RootAuthorizationState.CHECKING
         job = scope.launch(Dispatchers.IO) {
-            var ownedProcess: Process? = null
-            try {
-                // The path comes from our own ApplicationInfo, never from rules or IPC.
-                require(apkPath.startsWith("/data/app/") && apkPath.endsWith("/base.apk") &&
-                    apkPath.matches(Regex("[A-Za-z0-9_./~=+\\-]+")))
-                val script = "CLASSPATH='$apkPath' exec /system/bin/app_process /system/bin dev.opluskeycontrol.root.ScopeWatchMain"
-                val p = ProcessBuilder("su", "-c", script).redirectErrorStream(true).start()
-                ownedProcess = p
-                ensureActive()
-                if (epoch.get() != token) return@launch
-                process = p
-                p.inputStream.bufferedReader().use { lines ->
-                    var ready = false
-                    for (attempt in 0 until 32) {
-                        val line = lines.readLine() ?: break
-                        if (line == "READY") { ready = true; break }
-                    }
-                    if (!ready) return@use
-                    if (epoch.get() == token) checked(check())
-                    while (isActive) {
-                        val line = lines.readLine() ?: break
-                        if (epoch.get() != token) break
-                        allowed.value = false
-                        state.value = RootAuthorizationState.CHECKING
-                        if (line != "CHANGED") continue
-                        // A bounded debounce only after filesystem activity, never an idle timer.
-                        delay(150)
-                        var drained = 0
-                        while (lines.ready() && drained++ < 128) {
-                            if (lines.readLine() != "CHANGED") break
+            var failures = 0
+            while (isActive && epoch.get() == token) {
+                var ownedProcess: Process? = null
+                try {
+                    // The path comes from our own ApplicationInfo, never from rules or IPC.
+                    require(apkPath.startsWith("/data/app/") && apkPath.endsWith("/base.apk") &&
+                        apkPath.matches(Regex("[A-Za-z0-9_./~=+\\-]+")))
+                    val script = "CLASSPATH='$apkPath' exec /system/bin/app_process /system/bin dev.opluskeycontrol.root.ScopeWatchMain"
+                    val p = ProcessBuilder("su", "-c", script).redirectErrorStream(true).start()
+                    ownedProcess = p
+                    ensureActive()
+                    if (epoch.get() != token) return@launch
+                    process = p
+                    p.inputStream.bufferedReader().use { lines ->
+                        var ready = false
+                        for (attempt in 0 until 32) {
+                            val line = lines.readLine() ?: break
+                            if (line == "READY") { ready = true; break }
                         }
+                        if (!ready) return@use
+                        failures = 0
                         if (epoch.get() == token) checked(check())
+                        while (isActive) {
+                            val line = lines.readLine() ?: break
+                            if (epoch.get() != token) break
+                            allowed.value = false
+                            state.value = RootAuthorizationState.CHECKING
+                            if (line != "CHANGED") continue
+                            // A bounded debounce only after filesystem activity, never an idle timer.
+                            delay(150)
+                            var drained = 0
+                            while (lines.ready() && drained++ < 128) {
+                                if (lines.readLine() != "CHANGED") break
+                            }
+                            if (epoch.get() == token) checked(check())
+                        }
                     }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { if (epoch.get() == token) allowed.value = false }
+                finally {
+                    if (epoch.get() == token) checked(false)
+                    if (process === ownedProcess) process = null
+                    ownedProcess?.let { closeProcess(it) }
                 }
-            } catch (_: Exception) { if (epoch.get() == token) allowed.value = false }
-            finally {
-                if (epoch.get() == token) checked(false)
-                if (process === ownedProcess) process = null
-                ownedProcess?.let { closeProcess(it) }
+                if (!isActive || epoch.get() != token) break
+                failures = (failures + 1).coerceAtMost(6)
+                // Only after watcher death/start failure; healthy standby blocks on
+                // inotify and never polls. Remain unauthorized until a fresh check.
+                delay(minOf(30000L, 1000L shl (failures - 1)))
             }
         }
     }
@@ -81,7 +91,7 @@ class VectorAuthorization(private val scope: CoroutineScope, private val apkPath
             row.getString("APP_PACKAGE") == "system" && row.getInt("USER_ID") == 0
         } }
     }.getOrDefault(false)
-    fun stop() {
+    @Synchronized fun stop() {
         epoch.incrementAndGet(); allowed.value = false; job?.cancel(); job = null
         state.value = RootAuthorizationState.INACTIVE
         val p = process; process = null; p?.let { closeProcess(it) }

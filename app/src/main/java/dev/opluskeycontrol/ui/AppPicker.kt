@@ -51,7 +51,7 @@ fun AppPicker(activityMode: Boolean, allowActivitySelection: Boolean = false, on
         entries
     }.onSuccess { apps = it }.onFailure { error = true }; selected = null; activities = null }
     LaunchedEffect(selected) { activities = null; error = false; selected?.let { app -> runCatching { catalog.activities(app.packageName) }.onSuccess { activities = it }.onFailure { error = true; activities = emptyList() } } }
-    Scaffold(topBar={OpAppBar(stringResource(if(selected!=null) R.string.choose_activity else R.string.choose_app),
+    Scaffold(topBar={OpAppBar(stringResource(if(selected!=null) R.string.choose_activity else if(activityMode) R.string.choose_activity_app else R.string.choose_app),
         onBack={if(selected!=null) {selected=null;query=""} else onClose()}) {
         TextButton(onClick={revision++}) {Text(stringResource(R.string.refresh))}
     }}) { padding ->
@@ -74,15 +74,15 @@ fun AppPicker(activityMode: Boolean, allowActivitySelection: Boolean = false, on
                 if(!error && (apps==null || (selected!=null && activities==null))) LinearProgressIndicator(Modifier.fillMaxWidth())
                 LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(0.dp)) {
                     if(selected==null) {
-                        val filtered=apps.orEmpty().filter {(system || !it.system || it.packageName in launchable) && (it.label.contains(query,true) || it.packageName.contains(query,true))}
+                        val filtered=apps.orEmpty().filter {(activityMode || it.packageName in launchable) && (system || !it.system || it.packageName in launchable) && (it.label.contains(query,true) || it.packageName.contains(query,true))}
                         if(!error && apps!=null && filtered.isEmpty()) item { Text(stringResource(R.string.no_results),Modifier.padding(vertical=24.dp),color=OpColors.Muted) }
                         items(filtered,key={it.packageName}) { app ->
                             val choose={
                                 if(activityMode) {selected=app;query=""}
                                 else if(app.packageName in launchable) onSelect(app,null) else {selected=app;query=""}
                             }
-                            Row(Modifier.fillMaxWidth().clickable(onClick=choose).heightIn(min=76.dp).padding(vertical=12.dp),
-                                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                            Row(Modifier.fillMaxWidth().clickable(onClick=choose).heightIn(min=56.dp).padding(vertical=6.dp),
+                                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                                 AppIcon(catalog,app.packageName)
                                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                     Text(app.label,style=MaterialTheme.typography.titleMedium)
@@ -100,7 +100,7 @@ fun AppPicker(activityMode: Boolean, allowActivitySelection: Boolean = false, on
                         items(filtered,key={it.name}) { activity ->
                             val selectable=activity.status in setOf(Launchability.LAUNCHER,Launchability.EXPORTED_UNVERIFIED) ||
                                 (activity.status==Launchability.INTERNAL && backendConfig.tier==dev.opluskeycontrol.domain.Tier.ROOT)
-                            Column(Modifier.fillMaxWidth().clickable(enabled=selectable) {onSelect(selected!!,activity.name)}.heightIn(min=56.dp).padding(vertical=16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.fillMaxWidth().clickable(enabled=selectable) {onSelect(selected!!,activity.name)}.heightIn(min=56.dp).padding(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Text(activity.label,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,color=if(selectable) MaterialTheme.colorScheme.onSurface else OpColors.Muted)
                                     if(selectable) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight,null,tint=OpColors.Muted)
@@ -131,5 +131,5 @@ fun AppPicker(activityMode: Boolean, allowActivitySelection: Boolean = false, on
     val icon by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, packageName) {
         value = catalog.icon(packageName)?.toBitmap(96, 96)?.asImageBitmap()
     }
-    if (icon != null) Image(icon!!, contentDescription = null, modifier = Modifier.size(40.dp)) else IconTile("apps", OpColors.Blue, 40.dp)
+    if (icon != null) Image(icon!!, contentDescription = null, modifier = Modifier.size(32.dp)) else IconTile("apps", OpColors.Blue, 32.dp)
 }

@@ -21,7 +21,13 @@ private val Context.dataStore by preferencesDataStore("rules", produceMigrations
         override suspend fun shouldMigrate(currentData: Preferences): Boolean = currentData[configurationKey]?.let { text ->
             runCatching {
                 val rules = JSONObject(text).getJSONArray("rules")
-                (0 until rules.length()).any { !rules.getJSONObject(it).isNull("schedule") }
+                (0 until rules.length()).any {
+                    val r = rules.getJSONObject(it)
+                    !r.isNull("schedule") || (r.optString("gesture") == "CHORD" &&
+                        setOf(r.optString("button"), r.optString("partner")).let { keys ->
+                            "POWER" in keys && "PLUS" !in keys
+                        })
+                }
             }.getOrDefault(false)
         } ?: false
         override suspend fun migrate(currentData: Preferences): Preferences = currentData.toMutablePreferences().apply {
@@ -38,7 +44,7 @@ object RuleCodec {
         put("version", 1); put("enabled", c.enabled); put("tier", c.tier.name)
         put("hapticFeedback", c.hapticFeedback)
         put("timing", JSONObject().put("double", c.timing.doubleMs).put("long", c.timing.longMs).put("chord", c.timing.chordMs).put("debounce", c.timing.debounceMs))
-        put("rules", JSONArray().apply { withoutSchedules(c.rules, ZonedDateTime.now()).forEach { r -> put(JSONObject().apply {
+        put("rules", JSONArray().apply { withoutSchedules(c.rules.filterNot { it.trigger.isPowerVolumeChord() }, ZonedDateTime.now()).forEach { r -> put(JSONObject().apply {
             put("id", r.id); put("button", r.trigger.button.name); put("gesture", r.trigger.gesture.name)
             put("partner", r.trigger.partner?.name); put("kind", r.action.kind.name)
             put("package", r.action.packageName); put("activity", r.action.activity); put("duration", r.action.durationSeconds)
@@ -64,7 +70,7 @@ object RuleCodec {
         require(rules.map { it.id }.distinct().size == rules.size)
         require(rules.none { RuleResolver.conflicts(it, rules) })
         val t = obj.getJSONObject("timing")
-        return Configuration(withoutSchedules(rules, now), obj.getBoolean("enabled"), Tier.valueOf(obj.getString("tier")), Timing(t.getLong("double"), t.getLong("long"), t.getLong("chord"), t.getLong("debounce")), obj.optBoolean("hapticFeedback", true))
+        return Configuration(withoutSchedules(rules.filterNot { it.trigger.isPowerVolumeChord() }, now), obj.getBoolean("enabled"), Tier.valueOf(obj.getString("tier")), Timing(t.getLong("double"), t.getLong("long"), t.getLong("chord"), t.getLong("debounce")), obj.optBoolean("hapticFeedback", true))
     }
 
     // Legacy backups may contain several time windows for the same trigger.

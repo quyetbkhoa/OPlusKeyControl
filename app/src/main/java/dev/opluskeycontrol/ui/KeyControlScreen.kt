@@ -164,59 +164,76 @@ fun KeyControlScreen(app: KeyControlApp, onPermissions: () -> Unit, onExport: ()
                         if (storeError) item { Notice(stringResource(R.string.storage_error)) }
                         if (!subpage && tab == 0) {
                             item { OpCard {
+                                val serviceConnected = when(config.tier) { Tier.ROOT -> rootConnected; Tier.BASIC -> connected; Tier.SHIZUKU -> shizukuConnected && shizukuGranted }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text(stringResource(R.string.ux_master), style = MaterialTheme.typography.titleMedium)
-                                        Text(stringResource(if(config.enabled && !emergency) R.string.enabled else R.string.disabled), color = OpColors.Muted, style = MaterialTheme.typography.bodyMedium)
+                                        Text(stringResource(if(!config.enabled || emergency) R.string.shortcuts_paused else if(serviceConnected) R.string.shortcuts_active else R.string.shortcuts_waiting), color = if(!config.enabled || emergency) OpColors.Muted else if(serviceConnected) OpColors.Success else OpColors.Amber, style = MaterialTheme.typography.bodySmall)
                                     }
                                     Switch(config.enabled && !emergency, onCheckedChange = app.store::setEnabled,
                                         modifier = Modifier.semantics { contentDescription = masterDescription },
                                         colors = SwitchDefaults.colors(checkedTrackColor = androidx.compose.ui.graphics.Color(0xFF247DFF), checkedThumbColor = androidx.compose.ui.graphics.Color.White))
                                 }
                                 HorizontalDivider(color = OpColors.Border)
-                                OpRow(stringResource(if(rootConnected) R.string.nd_connected else R.string.ux_configure_connection),
-                                    glyph = "link", tint = if(rootConnected) OpColors.Muted else OpColors.Amber,
-                                    onClick = { settingsPage = "permissions" })
+                                Row(Modifier.fillMaxWidth().clickable {settingsPage="permissions"}.heightIn(min=48.dp).padding(vertical=6.dp),
+                                    verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                    val stateColor = if(serviceConnected) OpColors.Success else OpColors.Red
+                                    OpGlyph("link",stateColor,22.dp)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.ux_connection),style=MaterialTheme.typography.titleMedium)
+                                        Text(stringResource(if(serviceConnected) R.string.nd_connected else R.string.service_disconnected),style=MaterialTheme.typography.bodySmall,color=stateColor)
+                                    }
+                                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight,null,tint=OpColors.Muted)
+                                }
                             } }
                             val groupTitles = listOf(R.string.plus, R.string.power, R.string.ui_volume, R.string.nd_chords)
                             listOf(0, 1, 3, 2).forEach { group ->
-                                val title = groupTitles[group]
-                                val rules = config.rules.filter { when(group) {
+                                val existing = config.rules.filter { when(group) {
                                     0 -> it.trigger.button == Button.PLUS && it.trigger.gesture != Gesture.CHORD
                                     1 -> it.trigger.button == Button.POWER && it.trigger.gesture != Gesture.CHORD
                                     2 -> it.trigger.button in setOf(Button.VOLUME_UP, Button.VOLUME_DOWN) && it.trigger.gesture != Gesture.CHORD
                                     else -> it.trigger.gesture == Gesture.CHORD
                                 } }
-                                item(key = "group-$group") {
-                                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(stringResource(title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = OpColors.Muted)
-                                        if(group != 2) IconButton(onClick = { triggerGroup = group; selectingTrigger = true }) {
-                                            Icon(Icons.Outlined.Add, stringResource(R.string.ux_add_in, stringResource(title)), tint = OpColors.Accent)
-                                        }
-                                    }
-                                    if(rules.isEmpty()) OpCard {
-                                        if(group == 2) Text(stringResource(R.string.ux_no_volume), style=MaterialTheme.typography.bodyMedium, color=OpColors.Muted)
-                                        else OpRow(stringResource(R.string.ux_no_mapping), glyph="plus", onClick={triggerGroup=group;selectingTrigger=true})
-                                    }
+                                val slots = when(group) {
+                                    0 -> listOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.TRIPLE, Gesture.LONG).map { Trigger(Button.PLUS,it) }
+                                    1 -> listOf(Gesture.DOUBLE, Gesture.TRIPLE).map { Trigger(Button.POWER,it) }
+                                    3 -> listOf(Button.VOLUME_UP,Button.VOLUME_DOWN,Button.POWER).map { Trigger(Button.PLUS,Gesture.CHORD,it) }
+                                    else -> existing.map { it.trigger }.distinct()
                                 }
-                                items(rules, key = { it.id }) { rule ->
-                                    val status = ruleStatus(rule, config, rootConnected, emergency, now, context, backendFeatures)
-                                    val canEnable = (Capabilities.configurableTrigger(config.tier,rule.trigger) || Capabilities.trigger(context,config.tier,rule.trigger).status == Support.SUPPORTED) && Capabilities.action(context,rule.action).status == Support.SUPPORTED
-                                    val switchDescription = stringResource(R.string.ux_enable) + ": " + triggerTitle(rule.trigger)
-                                    Surface(color=OpColors.Surface, shape=MaterialTheme.shapes.large) {
-                                        Row(Modifier.fillMaxWidth().padding(start=16.dp,end=8.dp), verticalAlignment=Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f).clickable { editing=rule;initialTrigger=null;editor=true }.heightIn(min=56.dp).padding(vertical=10.dp), verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                                                Text(if(group == 3) triggerTitle(rule.trigger) else stringResource(rule.trigger.gesture.label()), style=MaterialTheme.typography.titleMedium)
-                                                Text(actionSummary(rule.action), style=MaterialTheme.typography.bodyMedium, color=OpColors.Muted)
-                                                if(status.first !in setOf(R.string.ui_ready, R.string.disabled, R.string.ui_paused, R.string.ui_waiting_backend)) Text(stringResource(status.first), style=MaterialTheme.typography.bodySmall, color=status.second)
+                                if(slots.isNotEmpty()) item(key = "group-$group") {
+                                    SectionTitle(stringResource(groupTitles[group]))
+                                    Spacer(Modifier.height(6.dp))
+                                    OpCard {
+                                        val entries = slots.flatMap { trigger ->
+                                            val matches = existing.filter { it.trigger.sameAs(trigger) }
+                                            if(matches.isEmpty()) listOf(trigger to null) else matches.map { trigger to it }
+                                        }
+                                        entries.forEachIndexed { index, (trigger, rule) ->
+                                            if(index > 0) HorizontalDivider(color=OpColors.Border)
+                                            if(rule == null) {
+                                                OpRow(if(group == 3) triggerTitle(trigger) else stringResource(trigger.gesture.label()),
+                                                    stringResource(R.string.unassigned), glyph=if(group==3) "link" else if(group==1) "power" else "plus",
+                                                    tint=OpColors.Muted, onClick={editing=null;initialTrigger=trigger;editor=true})
+                                            } else {
+                                                val status = ruleStatus(rule,config,rootConnected,emergency,now,context,backendFeatures)
+                                                val canEnable = Capabilities.configurableTrigger(config.tier,rule.trigger) && Capabilities.action(context,rule.action).status==Support.SUPPORTED
+                                                Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                                    OpGlyph(if(group==3) "link" else if(group==1) "power" else "plus",OpColors.Muted,22.dp)
+                                                    Column(Modifier.weight(1f).clickable {editing=rule;initialTrigger=null;editor=true}.heightIn(min=56.dp).padding(vertical=6.dp), verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                                        Text(if(group==3) triggerTitle(rule.trigger) else stringResource(rule.trigger.gesture.label()),style=MaterialTheme.typography.titleMedium)
+                                                        Text(actionSummary(rule.action),style=MaterialTheme.typography.bodyMedium,color=OpColors.Muted)
+                                                        if(status.first !in setOf(R.string.ui_ready,R.string.disabled,R.string.ui_paused,R.string.ui_waiting_backend)) Text(stringResource(status.first),style=MaterialTheme.typography.bodySmall,color=status.second)
+                                                    }
+                                                    val switchLabel = triggerTitle(rule.trigger)
+                                                    Switch(rule.enabled,enabled=rule.enabled || canEnable,
+                                                        modifier=Modifier.semantics {contentDescription=switchLabel},
+                                                        colors=SwitchDefaults.colors(checkedTrackColor=androidx.compose.ui.graphics.Color(0xFF247DFF),checkedThumbColor=androidx.compose.ui.graphics.Color.White),
+                                                        onCheckedChange={checked ->
+                                                            if(checked && RuleResolver.conflicts(rule.copy(enabled=true),config.rules)) app.actions.message.value=R.string.conflict
+                                                            else app.store.mutate {c -> c.copy(rules=c.rules.map {if(it.id==rule.id) it.copy(enabled=checked) else it})}
+                                                        })
+                                                }
                                             }
-                                            Switch(rule.enabled, enabled=rule.enabled || canEnable,
-                                                modifier=Modifier.semantics { contentDescription = switchDescription },
-                                                colors=SwitchDefaults.colors(checkedTrackColor=androidx.compose.ui.graphics.Color(0xFF247DFF),checkedThumbColor=androidx.compose.ui.graphics.Color.White),
-                                                onCheckedChange={checked ->
-                                                    if(checked && RuleResolver.conflicts(rule.copy(enabled=true),config.rules)) app.actions.message.value=R.string.conflict
-                                                    else app.store.mutate { c -> c.copy(rules=c.rules.map { if(it.id==rule.id) it.copy(enabled=checked) else it }) }
-                                                })
                                         }
                                     }
                                 }
@@ -355,8 +372,8 @@ private fun ruleStatus(rule: Rule, config: Configuration, connected: Boolean, em
     else -> R.string.ui_ready to OpColors.Success
 }
 @Composable private fun PermissionLine(title: Int, glyph: String, granted: Boolean, request: () -> Unit) {
-    OpRow(stringResource(title), stringResource(if(granted) R.string.permission_granted else R.string.permission_missing), glyph, if(granted) OpColors.Mint else OpColors.Amber,
-        onClick = if(granted) null else request, trailing = { if(granted) Icon(Icons.Outlined.CheckCircle, null, tint = OpColors.Mint) else TextButton(onClick = request) { Text(stringResource(R.string.ui_grant)) } })
+    OpRow(stringResource(title), stringResource(if(granted) R.string.permission_granted else R.string.permission_missing), glyph, if(granted) OpColors.Success else OpColors.Red,
+        onClick = if(granted) null else request, trailing = { if(granted) Icon(Icons.Outlined.CheckCircle, null, tint = OpColors.Success) else TextButton(onClick = request) { Text(stringResource(R.string.ui_grant)) } })
 }
 @Composable fun triggerTitle(t: Trigger): String = if(t.partner != null) stringResource(t.button.label()) + " + " + stringResource(t.partner!!.label()) else stringResource(t.button.label()) + " · " + stringResource(t.gesture.label())
 @Composable fun Notice(text: String) { OpCard { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Icon(Icons.Outlined.Info, null, tint = OpColors.Blue); Text(text, style = MaterialTheme.typography.bodyMedium, color = OpColors.Muted) } } }
@@ -379,7 +396,7 @@ private fun ruleStatus(rule: Rule, config: Configuration, connected: Boolean, em
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OpCard { OpRow(stringResource(R.string.double_ms, double.toInt()), glyph = "clock"); Slider(double, { double = it }, valueRange = 150f..600f, steps = 8); RangeLabels("150 ms", "600 ms") }
         OpCard { OpRow(stringResource(R.string.long_ms, long.toInt()), glyph = "clock"); Slider(long, { long = it }, valueRange = 400f..1500f, steps = 10); RangeLabels("400 ms", "1500 ms") }
-        OpCard { OpRow(stringResource(R.string.chord_ms, chord.toInt()), glyph = "link", tint = OpColors.Amber); StatusChip(stringResource(R.string.ui_unsupported), OpColors.Amber); Slider(chord, { chord = it }, valueRange = 30f..250f, steps = 10); RangeLabels("30 ms", "250 ms") }
+        OpCard { OpRow(stringResource(R.string.chord_ms, chord.toInt()), glyph = "link", tint = OpColors.Amber); Slider(chord, { chord = it }, valueRange = 30f..250f, steps = 10); RangeLabels("30 ms", "250 ms") }
         OpCard { OpRow(stringResource(R.string.debounce_ms, debounce.toInt()), glyph = "pulse"); Slider(debounce, { debounce = it }, valueRange = 0f..100f, steps = 9); RangeLabels("0 ms", "100 ms") }
         Button(onClick = { save(Timing(double.toLong(), long.toLong(), chord.toLong(), debounce.toLong())) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.save)) }
     }

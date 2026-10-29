@@ -22,26 +22,43 @@ class ActionExecutor(private val context: Context, private val onAccepted: () ->
     val torchReady = MutableStateFlow(false)
     val busy = MutableStateFlow(false)
     private val mutex = Mutex()
+    private val actionWakeLock by lazy {
+        context.getSystemService(android.os.PowerManager::class.java)
+            .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "OPlusKeyControl:action")
+            .apply { setReferenceCounted(false) }
+    }
     private val cameras = context.getSystemService(CameraManager::class.java)
-    private val torch = mutableMapOf<String, Boolean>()
-    private val available = mutableMapOf<String, Boolean>()
+    private val torch = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val available = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     init {
         cameras.registerTorchCallback(object : CameraManager.TorchCallback() {
             override fun onTorchModeChanged(id: String, enabled: Boolean) { torch[id] = enabled; available[id] = true; torchReady.value = available.values.any { it } }
             override fun onTorchModeUnavailable(id: String) { available[id] = false; torchReady.value = available.values.any { it } }
         }, Handler(Looper.getMainLooper()))
     }
-    suspend fun execute(action: Action, visibleActivity: Boolean = false, rootAuthorized: Boolean = false, confirmation: Boolean = true) {
-        if (!mutex.tryLock()) { message.value = R.string.action_busy; return }
+    suspend fun execute(action: Action, visibleActivity: Boolean = false, rootAuthorized: Boolean = false, confirmation: Boolean = true,
+                        preflight: () -> Boolean = { true }) {
+        mutex.lock()
+        val permitted = try { preflight() } catch (failure: Throwable) { mutex.unlock(); throw failure }
+        if (!permitted) { mutex.unlock(); return }
         busy.value = true
         try {
+            actionWakeLock.acquire(15000L)
             when (action.kind) {
                 ActionKind.TORCH_TOGGLE, ActionKind.TORCH_ON, ActionKind.TORCH_OFF -> {
                     if (!Capabilities.permission(context, android.Manifest.permission.CAMERA)) { message.value = R.string.camera_permission; return }
                     val id = cameras.cameraIdList.firstOrNull { cameras.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true &&
                         cameras.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK }
                     if (id == null || available[id] == false) { message.value = R.string.torch_unavailable; return }
-                    cameras.setTorchMode(id, when (action.kind) { ActionKind.TORCH_ON -> true; ActionKind.TORCH_OFF -> false; else -> !(torch[id] ?: false) })
+                    val enabled = when (action.kind) { ActionKind.TORCH_ON -> true; ActionKind.TORCH_OFF -> false; else -> !(torch[id] ?: false) }
+                    setTorchWithRetry(enabled, { cameras.setTorchMode(id, it) }, { failure ->
+                        failure is android.hardware.camera2.CameraAccessException && failure.reason in setOf(
+                            android.hardware.camera2.CameraAccessException.CAMERA_DISCONNECTED,
+                            android.hardware.camera2.CameraAccessException.CAMERA_ERROR)
+                    }, { kotlinx.coroutines.delay(it) }, { attempt, failure ->
+                        android.util.Log.w("OPlusKeyControl", "TORCH_RETRY attempt=$attempt enabled=$enabled", failure)
+                    })
+                    torch[id] = enabled
                     message.value = null
                     if (confirmation) onAccepted()
                 }
@@ -85,8 +102,16 @@ class ActionExecutor(private val context: Context, private val onAccepted: () ->
                     else message.value = R.string.recorder_visible
                 }
             }
-        } catch (_: Exception) { message.value = R.string.action_failed }
-        finally { mutex.unlock(); busy.value = false }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            android.util.Log.w("OPlusKeyControl", "ACTION_FAILED kind=${action.kind}", failure)
+            message.value = R.string.action_failed
+        }
+        finally {
+            runCatching { if (actionWakeLock.isHeld) actionWakeLock.release() }
+            mutex.unlock(); busy.value = false
+        }
     }
     private suspend fun openStockCameraRoot(): Boolean {
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked

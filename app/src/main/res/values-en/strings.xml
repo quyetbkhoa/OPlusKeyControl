@@ -31,7 +31,7 @@
     <string name="torch_on">Flashlight on</string>
     <string name="torch_off">Flashlight off</string>
     <string name="open_app">Open app</string>
-    <string name="open_activity">Open app activity (Root)</string>
+    <string name="open_activity">Open Activity</string>
     <string name="stock_camera">Open stock camera</string>
     <string name="recorder_toggle">Start / stop recording</string>
     <string name="your_buttons">Button control</string>
@@ -89,7 +89,7 @@
     <string name="no_recordings">No saved recordings.</string>
     <string name="timings">Gesture timing</string>
     <string name="timings_description">Used by the gesture engine. These controls do not activate unverified backends.</string>
-    <string name="double_ms">Double click: %1$d ms</string>
+    <string name="double_ms">Multi-press interval: %1$d ms</string>
     <string name="long_ms">Long press: %1$d ms</string>
     <string name="chord_ms">Chord window: %1$d ms</string>
     <string name="debounce_ms">Debounce: %1$d ms</string>
@@ -135,14 +135,14 @@
     <string name="current_profile_only">Current profile only; cross-user/profile access is not assumed.</string>
     <string name="test_action">Test action now</string>
     <string name="test_action_confirmation">Run now: %1$s. This affects the device or opens the selected app.</string>
-    <string name="root_connected">Root / Vector · Plus connected</string>
-    <string name="root_disconnected">Root / Vector · Backend disconnected</string>
+    <string name="root_connected">Button service · Connected</string>
+    <string name="root_disconnected">Button service · Disconnected</string>
     <string name="root_full_coverage">Enable Plus gestures individually. While a rule is active, unmapped gestures do nothing.</string>
     <string name="recorder_root_experimental">MP3 recording · notification and stop button</string>
     <string name="photo_confirmed">A new photo was acknowledged by MediaStore; camera remains open.</string>
     <string name="power_backend_missing">Power double press has no backend yet. Save as a draft.</string>
-    <string name="root_checking">Root / Vector · Checking permission and scope…</string>
-    <string name="root_authorized_waiting">Root / Vector · Permission and scope verified, Plus disconnected</string>
+    <string name="root_checking">Button service · Checking access…</string>
+    <string name="root_authorized_waiting">Root authorized · Waiting for button service</string>
     <string name="root_authorization_failed">Root / scope could not be verified. Check Root access, the OPlusKeyControl module and system scope in Vector.</string>
     <string name="observation_only">This mode does not support replacing button actions yet.</string>
     <string name="remap_off_after_mode_change">Remapping is off. Enable it in Overview when ready.</string>
@@ -159,7 +159,7 @@
     <string name="show_details">Show explanation</string>
     <string name="shizuku_requesting">Waiting for Shizuku permission…</string>
     <string name="shizuku_denied">Shizuku permission was denied or the request failed.</string>
-    <string name="ui_connection">Permissions and connection</string>
+    <string name="ui_connection">Connection and permissions</string>
     <string name="ui_battery">Background and battery</string>
     <string name="ui_about">About</string>
     <string name="ui_delete_rule">Delete this rule?</string>
@@ -211,8 +211,8 @@
     <string name="ui_current_action_hint">Rule preview, not confirmation of execution.</string>
     <string name="ui_cancel_changes">Discard changes?</string>
     <string name="ui_camera_trial">Test before enabling</string>
-    <string name="power_double_experimental">Power double press · experimental. Single waits for the system multipress window; holds and emergency handling remain in OEM policy.</string>
-    <string name="chord_plus_first">Plus + Volume: hold either key, then press the other. Volume first may initially change volume. Plus + Power: hold Plus first. With a chord rule, Plus hold fires on release. Power + Volume: within 150 ms, in either order.</string>
+    <string name="power_double_experimental">Power double/triple press · depends on ROM support</string>
+    <string name="chord_plus_first">Hold Plus and press Power or Volume. Both orders are recognized; pressing Power/Volume first may also invoke its stock behavior. With an active chord, Plus long press executes on release.</string>
     <string name="advanced_backend_missing">This hook is not ready in the current backend.</string>
     <string name="ui_configurable">Configurable</string>
     <string name="inspector_title">Activity / UI inspector</string>
@@ -260,14 +260,14 @@
     <string name="nd_save_hint">Runs when permissions and schedule allow.</string>
     <string name="nd_chord_help">How combinations work</string>
     <string name="nd_mode">Connection mode</string>
-    <string name="nd_actual_status">Actual status</string>
+    <string name="nd_actual_status">Service status</string>
     <string name="nd_play">Open recording</string>
     <string name="nd_key">Key</string>
     <string name="nd_press">Press type</string>
     <string name="ux_assignments">Key mappings</string>
     <string name="ux_utilities">Utilities</string>
     <string name="ux_settings">Settings</string>
-    <string name="ux_master">Key remapping</string>
+    <string name="ux_master">Button shortcuts</string>
     <string name="ux_choose_trigger">Choose a gesture</string>
     <string name="ux_action">Action</string>
     <string name="ux_choose_action">Choose an action</string>
@@ -286,7 +286,7 @@
     <string name="ux_test_tools">Quick actions</string>
     <string name="ux_recordings">Recordings</string>
     <string name="ux_inspector">Screen inspector</string>
-    <string name="ux_connection">Connection &amp; permissions</string>
+    <string name="ux_connection">Button service</string>
     <string name="ux_background">Background operation</string>
     <string name="ux_sensitivity">Gesture timing</string>
     <string name="ux_management">Management</string>
@@ -298,4 +298,13 @@
     <string name="ux_utilities_help">Saved recordings, the screen inspector and individual action tests.</string>
     <string name="haptic_confirmation">Action vibration</string>
     <string name="haptic_confirmation_hint">Vibrate as soon as a gesture is recognized</string>
+    <string name="shortcuts_active">Active</string>
+    <string name="shortcuts_paused">Paused</string>
+    <string name="service_disconnected">Disconnected</string>
+    <string name="unassigned">Not assigned</string>
+    <string name="triple_click">Triple press</string>
+    <string name="open_app_hint">Open the main screen of an app</string>
+    <string name="open_activity_hint">Choose a specific screen or function inside an app</string>
+    <string name="choose_activity_app">Apps for Activity selection</string>
+    <string name="shortcuts_waiting">Waiting for connection</string>
 </resources>

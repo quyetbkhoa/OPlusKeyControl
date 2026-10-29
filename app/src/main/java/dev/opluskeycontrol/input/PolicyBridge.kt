@@ -32,8 +32,66 @@ class PolicyBridge(private val app: KeyControlApp) {
     @Volatile private var available = false
     private var peer: IBinder? = null
     private var death: IBinder.DeathRecipient? = null
+    private var configTimeout: Job? = null
+    private val configAcknowledgement = ConfigAcknowledgement()
     private val lock = Any()
+    private data class ActionRequest(val callback: IBinder, val revision: Long, val id: String, val received: Long)
+    private val actionQueue = SerialRequestQueue<ActionRequest>(app.scope, onFailure = {
+        android.util.Log.e("OPlusKeyControl", "ACTION_QUEUE_FAILED", it); lastRequest = "queue-processing-failed"
+    }) { request -> processAction(request) }
     private var started = false
+    private var runtimeTrace = "no-runtime-trace"
+    private val publication = PolicyPublication()
+    private val requestHistory = java.util.ArrayDeque<String>()
+    @Volatile private var lastRequest = "none"
+        set(value) {
+            field = value
+            val row = "${android.os.SystemClock.elapsedRealtime()}:$value"
+            synchronized(requestHistory) {
+                requestHistory.addLast(row)
+                while (requestHistory.size > 64) requestHistory.removeFirst()
+            }
+            android.util.Log.i("OPlusKeyControl", "ACTION_TRACE $row")
+        }
+    @Volatile private var lastRequestAt = 0L
+    private fun validate(request: ActionRequest): Rule? = synchronized(lock) {
+        if (requestExpired(request.received, android.os.SystemClock.elapsedRealtime())) {
+            lastRequest = "request-expired"; return@synchronized null
+        }
+        if (peer !== request.callback || request.revision != generation.get()) {
+            lastRequest = "stale-connection-or-revision"; return@synchronized null
+        }
+        val c = effectiveConfiguration()
+        if (!authorization.allowed.value || app.store.emergency.value || !c.enabled || c.tier != Tier.ROOT) {
+            lastRequest = "not-authorized-or-disabled"; return@synchronized null
+        }
+        val rule = c.rules.singleOrNull { it.id == request.id } ?: run {
+            lastRequest = "missing-rule"; return@synchronized null
+        }
+        if (RuleResolver.resolve(c.rules, rule.trigger, ZonedDateTime.now()) != Resolution.Match(rule)) {
+            lastRequest = "rule-no-longer-selected"; return@synchronized null
+        }
+        rule
+    }
+    private suspend fun processAction(request: ActionRequest) {
+        val rule = validate(request) ?: return
+        if (rule.action.kind == ActionKind.RECORD_TOGGLE) { lastRequest = "recording-request-forwarded"; return }
+        var executed = false
+        app.actions.execute(rule.action, app.visible.value, rootAuthorized = true, confirmation = false, preflight = {
+            val valid = validate(request) == rule
+            if (valid) { executed = true; lastRequest = "executing-${rule.action.kind}" }
+            valid
+        })
+        if (executed) lastRequest = if (app.actions.message.value == null) "completed-${rule.action.kind}" else "failed-${rule.action.kind}"
+    }
+    fun diagnosticSummary(): String = synchronized(lock) {
+        "connected=${connected.value} authorized=${authorization.allowed.value} authorization=${authorization.state.value} features=${features.value}" +
+            " generation=${generation.get()} enabled=${app.store.config.value.enabled} emergency=${app.store.emergency.value}" +
+            " torchReady=${app.actions.torchReady.value} busy=${app.actions.busy.value}" +
+            " lastRequest=$lastRequest lastRequestUptime=$lastRequestAt actionMessage=${app.actions.message.value}" +
+            "\nrequestHistory=${synchronized(requestHistory) { requestHistory.joinToString("\n") }}" +
+            "\nruntimeTrace=$runtimeTrace"
+    }
 
     val binder = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -42,6 +100,23 @@ class PolicyBridge(private val app: KeyControlApp) {
             return try {
                 data.enforceInterface(PolicyBinder.DESCRIPTOR)
                 when (code) {
+                    PolicyBinder.TRACE -> {
+                        val callback = data.readStrongBinder()
+                        val trace = requireNotNull(data.readString())
+                        require(trace.length <= 4096 && data.dataAvail() == 0)
+                        synchronized(lock) { if (peer === callback) runtimeTrace = trace }
+                    }
+                    PolicyBinder.CONFIG_APPLIED -> {
+                        val callback = requireNotNull(data.readStrongBinder())
+                        val revision = data.readLong()
+                        require(data.dataAvail() == 0)
+                        synchronized(lock) {
+                            if (peer === callback && revision == generation.get() && authorization.allowed.value && !app.store.emergency.value && configAcknowledgement.applied(revision)) {
+                                configTimeout?.cancel(); configTimeout = null
+                                connected.value = true
+                            }
+                        }
+                    }
                     PolicyBinder.HELLO -> {
                         val callback = requireNotNull(data.readStrongBinder())
                         val supported = data.readInt()
@@ -58,7 +133,7 @@ class PolicyBridge(private val app: KeyControlApp) {
                                 val recipient = IBinder.DeathRecipient { synchronized(lock) { if (peer === callback) closePeer(false) } }
                                 try {
                                     callback.linkToDeath(recipient, 0)
-                                    peer = callback; death = recipient; features.value = supported; connected.value = true
+                                    peer = callback; death = recipient; features.value = supported; connected.value = false
                                     publish()
                                 } catch (_: Exception) { closePeer(false) }
                             }
@@ -72,21 +147,15 @@ class PolicyBridge(private val app: KeyControlApp) {
                         } }
                     }
                     PolicyBinder.ACTION, PolicyBinder.FEEDBACK -> {
-                        val callback = data.readStrongBinder()
+                        val callback = requireNotNull(data.readStrongBinder())
                         val revision = data.readLong(); val id = requireNotNull(data.readString())
                         require(id.length <= 128 && data.dataAvail() == 0)
-                        app.scope.launch {
-                            synchronized(lock) {
-                                if (peer !== callback || revision != generation.get()) return@synchronized
-                                val c = effectiveConfiguration()
-                                if (!authorization.allowed.value || app.store.emergency.value || !c.enabled || c.tier != Tier.ROOT) return@synchronized
-                                val rule = c.rules.singleOrNull { it.id == id } ?: return@synchronized
-                                if (RuleResolver.resolve(c.rules, rule.trigger, ZonedDateTime.now()) != Resolution.Match(rule)) return@synchronized
-                                if (code == PolicyBinder.FEEDBACK) app.feedback.confirm()
-                                else if (rule.action.kind != ActionKind.RECORD_TOGGLE) app.scope.launch {
-                                    app.actions.execute(rule.action, app.visible.value, rootAuthorized = true, confirmation = false)
-                                }
-                            }
+                        val request = ActionRequest(callback, revision, id, android.os.SystemClock.elapsedRealtime())
+                        lastRequestAt = android.os.SystemClock.uptimeMillis()
+                        if (code == PolicyBinder.FEEDBACK) {
+                            app.scope.launch { if (validate(request) != null) { lastRequest = "feedback"; app.feedback.confirm() } }
+                        } else if (validate(request) != null) {
+                            lastRequest = if (actionQueue.offer(request)) "queued" else "queue-overflow"
                         }
                     }
                     PolicyBinder.DISCONNECT -> {
@@ -109,6 +178,9 @@ class PolicyBridge(private val app: KeyControlApp) {
             addAction(Intent.ACTION_PACKAGE_ADDED); addAction(Intent.ACTION_PACKAGE_REMOVED)
             addAction(Intent.ACTION_PACKAGE_REPLACED); addAction(Intent.ACTION_PACKAGE_CHANGED); addDataScheme("package")
         })
+        app.registerReceiver(object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) { refresh() }
+        }, IntentFilter(Intent.ACTION_SCREEN_ON))
         app.scope.launch {
             combine(app.store.config, app.store.emergency, authorization.allowed) { c, emergency, allowed ->
                 Triple(c, emergency, allowed)
@@ -116,7 +188,6 @@ class PolicyBridge(private val app: KeyControlApp) {
                 .combine(RecorderService.origin) { state, _ -> state }
                 .combine(RecorderService.error) { state, _ -> state }
                 .combine(app.actions.torchReady) { state, _ -> state }
-                .combine(app.actions.busy) { state, _ -> state }
                 .collectLatest { (config, emergency, allowed) ->
                 if (config.tier != Tier.ROOT) { withContext(Dispatchers.IO) { authorization.stop(); close() }; return@collectLatest }
                 authorization.start()
@@ -136,6 +207,7 @@ class PolicyBridge(private val app: KeyControlApp) {
         }
     }
     fun refresh() { if (BuildConfig.POLICY_RUNTIME) app.scope.launch(Dispatchers.IO) {
+        if (app.store.config.value.tier == Tier.ROOT && !app.store.emergency.value) authorization.start()
         synchronized(lock) {
             if (available && peer == null) app.sendBroadcast(Intent(PolicyWire.READY).setPackage("android"), PolicyWire.PERMISSION)
             publish()
@@ -159,7 +231,6 @@ class PolicyBridge(private val app: KeyControlApp) {
                     else -> true
                 } }.map { it.id }
                 val ready = ActionKind.entries.filter { kind ->
-                    if (app.actions.busy.value) return@filter false
                     when (kind) {
                         ActionKind.TORCH_TOGGLE, ActionKind.TORCH_ON, ActionKind.TORCH_OFF -> app.actions.torchReady.value && Capabilities.permission(app, android.Manifest.permission.CAMERA)
                         ActionKind.STOCK_CAMERA_CAPTURE -> true
@@ -169,13 +240,29 @@ class PolicyBridge(private val app: KeyControlApp) {
                         ActionKind.APP -> true
                     }
                 }
-                val bytes = PolicyWire.binderText(RuleCodec.encode(c.copy(enabled = c.enabled && !app.store.emergency.value && authorization.allowed.value)))
+                val snapshot = PublishedPolicy(
+                    RuleCodec.encode(c.copy(enabled = c.enabled && !app.store.emergency.value && authorization.allowed.value)),
+                    ready.fold(0) { mask, kind -> mask or (1 shl kind.ordinal) },
+                    RecorderService.recording.value, readyRuleIds)
+                if (!publication.changed(snapshot)) return
+                val bytes = PolicyWire.binderText(snapshot.text)
+                val version = generation.incrementAndGet()
+                connected.value = false
+                configAcknowledgement.sent(version)
                 PolicyBinder.send(target, PolicyBinder.CONFIG) {
-                    it.writeLong(generation.incrementAndGet()); it.writeByteArray(bytes)
-                    it.writeInt(ready.fold(0) { mask, kind -> mask or (1 shl kind.ordinal) })
-                    it.writeInt(if (RecorderService.recording.value) 1 else 0)
+                    it.writeLong(version); it.writeByteArray(bytes)
+                    it.writeInt(snapshot.readyMask)
+                    it.writeInt(if (snapshot.recording) 1 else 0)
                     it.writeInt(readyRuleIds.size)
                     readyRuleIds.forEach(it::writeString)
+                }
+                publication.sent(snapshot)
+                configTimeout?.cancel()
+                configTimeout = app.scope.launch(Dispatchers.IO) {
+                    delay(5000)
+                    synchronized(lock) {
+                        if (peer === target && generation.get() == version && configAcknowledgement.awaiting(version)) closePeer(retry = true)
+                    }
                 }
             } catch (_: Exception) { closePeer() }
         }
@@ -187,12 +274,15 @@ class PolicyBridge(private val app: KeyControlApp) {
             Rule("recording-stop", trigger, Action(ActionKind.RECORD_TOGGLE), priority = 100)) else c
     }
     fun disconnect() { synchronized(lock) { closePeer() } }
-    private fun closePeer(notify: Boolean = true) {
+    private fun closePeer(notify: Boolean = true, retry: Boolean = false) {
+        configTimeout?.cancel(); configTimeout = null
+        configAcknowledgement.clear()
+        publication.reset()
         val old = peer; val recipient = death
         peer = null; death = null; generation.incrementAndGet(); connected.value = false; features.value = 0
         if (old != null) {
             if (recipient != null) runCatching { old.unlinkToDeath(recipient, 0) }
-            if (notify) runCatching { PolicyBinder.send(old, PolicyBinder.DISCONNECT) { it.writeInt(0) } }
+            if (notify) runCatching { PolicyBinder.send(old, PolicyBinder.DISCONNECT) { it.writeInt(if (retry) 1 else 0) } }
         }
     }
     private fun close() { synchronized(lock) { available = false; closePeer() } }

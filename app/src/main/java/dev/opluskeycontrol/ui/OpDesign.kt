@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
 import dev.opluskeycontrol.R
 import dev.opluskeycontrol.domain.ActionKind
 
@@ -54,13 +55,13 @@ object OpColors {
         surface = OpColors.Surface, onSurface = Color(0xFFE8E8E8), surfaceVariant = Color(0xFF242424),
         onSurfaceVariant = OpColors.Muted, outline = Color(0xFF717171), error = OpColors.Red
     ), typography = Typography(
-        headlineMedium = androidx.compose.ui.text.TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold),
-        titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-        titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-        bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
-        bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-        bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, lineHeight = 20.sp),
-        labelLarge = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+        headlineMedium = androidx.compose.ui.text.TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold),
+        titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
+        titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+        bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
+        bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, lineHeight = 19.sp),
+        bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
+        labelLarge = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
     ), shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp)), content = content)
 }
 
@@ -107,8 +108,8 @@ fun ActionKind.glyph() = when (this) {
 }
 @Composable fun OpCard(modifier: Modifier = Modifier, selected: Boolean = false, tint: Color = OpColors.Mint, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier.fillMaxWidth().widthIn(max=720.dp),color=if(selected) tint.copy(alpha=.07f) else OpColors.Surface,
-        shape=RoundedCornerShape(20.dp),border=if(selected) BorderStroke(1.dp,tint.copy(alpha=.7f)) else null) {
-        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp),content=content)
+        shape=RoundedCornerShape(16.dp),border=if(selected) BorderStroke(1.dp,tint.copy(alpha=.7f)) else null) {
+        Column(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalArrangement=Arrangement.spacedBy(0.dp),content=content)
     }
 }
 @Composable fun StatusChip(text: String, tint: Color = OpColors.Mint) {
@@ -119,7 +120,7 @@ fun ActionKind.glyph() = when (this) {
 @Composable fun SectionTitle(text: String) { Text(text,style=MaterialTheme.typography.titleMedium,color=OpColors.Muted,modifier=Modifier.fillMaxWidth().padding(top=8.dp,bottom=2.dp)) }
 @Composable fun OpRow(title: String, subtitle: String? = null, glyph: String = "file", tint: Color = OpColors.Mint, onClick: (() -> Unit)? = null, trailing: @Composable (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier).heightIn(min=48.dp).padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        OpGlyph(glyph,tint,24.dp)
+        OpGlyph(glyph,tint,22.dp)
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
             Text(title,style=MaterialTheme.typography.titleMedium)
             if(!subtitle.isNullOrBlank()) Text(subtitle,style=MaterialTheme.typography.bodyMedium,color=OpColors.Muted)
@@ -129,6 +130,7 @@ fun ActionKind.glyph() = when (this) {
 }
 @Composable fun OpAppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
     TopAppBar(title={ Text(title,style=MaterialTheme.typography.titleLarge,maxLines=if(title==stringResource(R.string.app_name)) 1 else 2,overflow=TextOverflow.Ellipsis) },
+        expandedHeight=64.dp * maxOf(1f,LocalDensity.current.fontScale*.9f),
         navigationIcon={ if(onBack!=null) IconButton(onClick=onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack,stringResource(R.string.back)) } },
         actions=actions,colors=TopAppBarDefaults.topAppBarColors(containerColor=OpColors.Background))
 }

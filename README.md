@@ -7,9 +7,9 @@ năng và ghi âm bằng thao tác quen thuộc.
 
 ## Gán thao tác cho phím
 
-- **Nút Plus:** nhấn một lần, nhấn đúp hoặc nhấn giữ, mỗi thao tác có hành động riêng.
-- **Nút nguồn:** gán hành động cho nhấn đúp.
-- **Tổ hợp phím:** Plus + tăng/giảm âm lượng, Plus + nguồn và nguồn + tăng/giảm âm lượng.
+- **Nút Plus:** nhấn một lần, nhấn đúp, nhấn ba lần hoặc nhấn giữ, mỗi thao tác có hành động riêng.
+- **Nút nguồn:** gán hành động cho nhấn đúp hoặc nhấn ba lần.
+- **Tổ hợp phím:** Plus + tăng âm lượng, Plus + giảm âm lượng và Plus + nguồn.
 - **Bật/tắt độc lập:** quản lý từng cấu hình phím hoặc tắt toàn bộ bằng một công tắc.
 - **Tùy chỉnh thời gian:** điều chỉnh ngưỡng nhấn đúp, nhấn giữ và nhận diện tổ hợp.
 

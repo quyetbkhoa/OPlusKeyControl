@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.0.3 — 2026-10-29 (runtime preview)
+
+- Require configuration-applied acknowledgement before reporting the root
+  backend connected; recover a stalled handshake with timeouts and backoff.
+- Continue recovery after prolonged app/root-watcher restart failures.
+- Serialize actions through a bounded FIFO; expire pending requests after five
+  seconds and revalidate authority and rules immediately before execution.
+- Keep executor busy state separate from published action readiness. Preserve
+  pending Plus/Power gesture recognition during unchanged policy refreshes.
+- Retry transient camera disconnect/error with the same desired torch state.
+- Add triple press for Plus and Power, grouped key controls and separate app
+  and Activity selection. Retain only the three Plus combinations; migrate
+  removed Power/Volume mappings and suppress the Plus/Power single-Power callback.
+- Validation: 218 JVM tests passed; build/lint and APK signature/scope audits
+  passed. App and root-watcher kill tests recovered without opening the app.
+- Physical first-press behavior after prolonged idle remains unverified.
+  A press before initial authorized configuration is applied can still pass
+  through to the OEM. This release remains experimental.
+- The APK is the exact tested debug build, with the existing local debug signer,
+  manifest versionName `0.1.0-dev` and versionCode `1`. The release tag identifies
+  the source snapshot; activation requires reloading the module and restarting
+  Android after an update.
+
 ## v1.0.2 — 2026-10-25 (runtime preview)
 
 ### Fixed

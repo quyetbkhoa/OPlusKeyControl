@@ -23,6 +23,9 @@ fun BackendStatus(tier: Tier, accessibility: Boolean, rootConnected: Boolean,
             else -> R.string.root_disconnected
         }
     }
-    Text(stringResource(status), style = MaterialTheme.typography.bodyMedium)
+    val active = when(tier) { Tier.ROOT -> rootConnected; Tier.BASIC -> accessibility; Tier.SHIZUKU -> shizukuConnected && shizukuGranted }
+    val checking = tier == Tier.ROOT && root == RootAuthorizationState.CHECKING
+    Text(stringResource(status), style = MaterialTheme.typography.bodyMedium,
+        color = if(active) OpColors.Success else if(checking) OpColors.Amber else OpColors.Red)
     if (tier != Tier.ROOT) Text(stringResource(R.string.observation_only), style = MaterialTheme.typography.bodySmall)
 }

@@ -146,6 +146,7 @@ class PlusChordSessionTest {
                 PolicyProof("fw",setOf(chord),true),BackendLease(1,10000,true,setOf(ActionKind.TORCH_TOGGLE)))
         }
         assertFalse(s.acceptPartner(Button.POWER,PolicyEvent(4,50,50,Edge.DOWN),50,time).consume)
+        assertFalse(s.acceptPartner(Button.POWER,PolicyEvent(4,50,75,Edge.UP),75,time).consume)
         s.plus(Edge.DOWN,100)
         assertEquals("power",s.acceptPartner(Button.POWER,PolicyEvent(4,200,200,Edge.DOWN),200,time).actions.single().rule.id)
         s.plus(Edge.UP,300)

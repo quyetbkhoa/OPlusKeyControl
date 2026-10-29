@@ -34,7 +34,7 @@ class PolicyGate(private val allowedButtons: Set<Button> = setOf(Button.PLUS), p
             !currentProof.verified || currentProof.firmware != firmware ||
             currentProof.allowed.none { it.sameAs(trigger) }) return PolicyDecision.PassThrough
         if (trigger.button !in allowedButtons) return PolicyDecision.PassThrough
-        if (trigger.button == Button.POWER && trigger.gesture != Gesture.CHORD && (!semanticPowerDouble || trigger.gesture != Gesture.DOUBLE)) return PolicyDecision.PassThrough
+        if (trigger.button == Button.POWER && trigger.gesture != Gesture.CHORD && (!semanticPowerDouble || trigger.gesture !in setOf(Gesture.DOUBLE, Gesture.TRIPLE))) return PolicyDecision.PassThrough
         if (trigger.gesture == Gesture.CHORD && !((plusVolumeChords && trigger.isPlusChord()) || (semanticPowerChords && trigger.isPowerVolumeChord()))) return PolicyDecision.PassThrough
         return when (val resolution = RuleResolver.resolve(config.rules, trigger, localTime)) {
             is Resolution.Match -> if (resolution.rule.action.kind in currentLease.readyActions &&

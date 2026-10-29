@@ -53,10 +53,9 @@ import kotlinx.coroutines.withContext
 
 fun configurableTriggers(tier: Tier): List<Trigger> {
     val singles = listOf(Button.PLUS, Button.POWER, Button.VOLUME_UP, Button.VOLUME_DOWN).flatMap { key ->
-        (if (key == Button.POWER) listOf(Gesture.DOUBLE) else listOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.LONG)).map { Trigger(key, it) }
+        (if (key == Button.POWER) listOf(Gesture.DOUBLE, Gesture.TRIPLE) else listOf(Gesture.SINGLE, Gesture.DOUBLE, Gesture.TRIPLE, Gesture.LONG)).map { Trigger(key, it) }
     }
-    val chords = listOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER).map { Trigger(Button.PLUS, Gesture.CHORD, it) } +
-        listOf(Button.VOLUME_UP, Button.VOLUME_DOWN).map { Trigger(Button.POWER, Gesture.CHORD, it) }
+    val chords = listOf(Button.VOLUME_UP, Button.VOLUME_DOWN, Button.POWER).map { Trigger(Button.PLUS, Gesture.CHORD, it) }
     return (singles + chords).filter { Capabilities.configurableTrigger(tier, it) }
 }
 
@@ -82,7 +81,7 @@ fun configurableTriggers(tier: Tier): List<Trigger> {
     }
 }
 
-@Composable fun ActionPicker(recent: List<Action>, onDismiss: () -> Unit, onSelect: (Action) -> Unit, onApps: () -> Unit) {
+@Composable fun ActionPicker(recent: List<Action>, onDismiss: () -> Unit, onSelect: (Action) -> Unit, onApps: () -> Unit, onActivities: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = OpColors.Surface) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding(), contentPadding = PaddingValues(16.dp)) {
             item { Text(stringResource(R.string.ux_choose_action), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 16.dp)) }
@@ -95,7 +94,10 @@ fun configurableTriggers(tier: Tier): List<Trigger> {
             items(listOf(ActionKind.TORCH_TOGGLE, ActionKind.RECORD_TOGGLE, ActionKind.STOCK_CAMERA_CAPTURE)) { kind ->
                 OpRow(stringResource(kind.label()), glyph = kind.glyph(), onClick = { onSelect(Action(kind)) })
             }
-            item { HorizontalDivider(color = OpColors.Border); OpRow(stringResource(R.string.ux_apps), glyph = "apps", onClick = onApps) }
+            item { SectionTitle(stringResource(R.string.ux_apps)) }
+            item { OpRow(stringResource(R.string.open_app), stringResource(R.string.open_app_hint), glyph = "apps", onClick = onApps) }
+            item { HorizontalDivider(color = OpColors.Border) }
+            item { OpRow(stringResource(R.string.open_activity), stringResource(R.string.open_activity_hint), glyph = "android", onClick = onActivities) }
         }
     }
 }

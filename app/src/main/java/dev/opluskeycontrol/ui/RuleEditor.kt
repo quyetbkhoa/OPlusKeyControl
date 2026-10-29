@@ -46,13 +46,14 @@ fun RuleEditor(config: Configuration, original: Rule?, initialTrigger: Trigger? 
     var target by remember { mutableStateOf(original?.action?.packageName?.let { AppEntry(it, it, false) }) }
     var activity by remember { mutableStateOf(original?.action?.activity) }
     var picker by remember { mutableStateOf(false) }
+    var activityPicker by remember { mutableStateOf(false) }
     var priority by remember { mutableFloatStateOf(original?.priority?.toFloat() ?: 0f) }
     var enabled by remember { mutableStateOf(original?.enabled ?: true) }
     var duration by remember { mutableFloatStateOf(original?.action?.durationSeconds?.toFloat() ?: 300f) }
     val id = remember { original?.id ?: UUID.randomUUID().toString() }
     BackHandler { if (picker) picker = false else onClose() }
     if (picker) {
-        AppPicker(activityMode = false, allowActivitySelection = true, onClose = { picker = false }, onSelect = { app, selected -> target = app; activity = selected; kind = if(selected == null) ActionKind.APP else ActionKind.ACTIVITY; actionChosen = true; picker = false })
+        AppPicker(activityMode = activityPicker, allowActivitySelection = false, onClose = { picker = false }, onSelect = { app, selected -> target = app; activity = selected; kind = if(selected == null) ActionKind.APP else ActionKind.ACTIVITY; actionChosen = true; picker = false })
         return
     }
     val trigger = runCatching { Trigger(button, gesture, if (gesture == Gesture.CHORD) partner else null) }.getOrNull()
@@ -73,7 +74,8 @@ fun RuleEditor(config: Configuration, original: Rule?, initialTrigger: Trigger? 
     if(actionMenu) ActionPicker(config.rules.map { it.action }, onDismiss={actionMenu=false}, onSelect={
         kind=it.kind; target=it.packageName?.let { p -> AppEntry(p,p,false) }; activity=it.activity
         duration=it.durationSeconds.toFloat(); actionChosen=true; actionMenu=false
-    },onApps={actionMenu=false;picker=true})
+    },onApps={actionMenu=false;activityPicker=false;picker=true},
+      onActivities={actionMenu=false;activityPicker=true;picker=true})
     if(deleteConfirm) AlertDialog(onDismissRequest={deleteConfirm=false}, title={Text(stringResource(R.string.ui_delete_rule))},
         confirmButton={TextButton(onClick={deleteConfirm=false;onDelete?.invoke()}) {Text(stringResource(R.string.delete),color=OpColors.Red)}},
         dismissButton={TextButton(onClick={deleteConfirm=false}) {Text(stringResource(R.string.cancel))}})

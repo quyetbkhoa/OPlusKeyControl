@@ -91,8 +91,18 @@ class PowerDoubleSessionTest {
         val s = session().double(); s.cancel()
         assertFalse(s.accept(2,250,0,600,time) { fail(); true })
         val changed = session().double()
-        changed.configure(PolicyConfiguration(listOf(rule),true,Tier.ROOT),PolicyProof("fw",setOf(trigger),true),BackendLease(9,10000,true,setOf(ActionKind.TORCH_TOGGLE)),300)
+        changed.configure(PolicyConfiguration(listOf(rule.copy(id = "changed")),true,Tier.ROOT),PolicyProof("fw",setOf(trigger),true),BackendLease(9,10000,true,setOf(ActionKind.TORCH_TOGGLE)),300)
         assertFalse(changed.accept(2,250,0,600,time) { fail(); true })
+    }
+    @Test fun readinessRefreshPreservesPressesButUsesCurrentLease() {
+        val s = session(); s.click(100)
+        s.configure(PolicyConfiguration(listOf(rule),true,Tier.ROOT),PolicyProof("fw",setOf(trigger),true),BackendLease(9,10000,true,setOf(ActionKind.TORCH_TOGGLE)),300)
+        s.click(250)
+        assertTrue(s.accept(2,250,0,600,time) { assertEquals(9L, it.session); true })
+        val revoked = session(); revoked.click(100)
+        revoked.configure(PolicyConfiguration(listOf(rule),true,Tier.ROOT),PolicyProof("fw",setOf(trigger),true),BackendLease(9,10000,true,emptySet()),300)
+        revoked.click(250)
+        assertFalse(revoked.accept(2,250,0,600,time) { fail(); true })
     }
     @Test fun conflictsAndSchedulesDoNotEnableRecognition() {
         assertEquals(1,session(listOf(rule,rule.copy(id="duplicate"))).maxPressCount(1,100,time))

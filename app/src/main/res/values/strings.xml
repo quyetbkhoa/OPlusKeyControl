@@ -31,7 +31,7 @@
     <string name="torch_on">Bật đèn pin</string>
     <string name="torch_off">Tắt đèn pin</string>
     <string name="open_app">Mở ứng dụng</string>
-    <string name="open_activity">Mở màn hình ứng dụng (Root)</string>
+    <string name="open_activity">Mở Activity</string>
     <string name="stock_camera">Mở camera gốc</string>
     <string name="recorder_toggle">Bắt đầu / dừng ghi âm</string>
     <string name="your_buttons">Điều khiển nút</string>
@@ -89,7 +89,7 @@
     <string name="no_recordings">Chưa có bản ghi đã lưu.</string>
     <string name="timings">Thời gian nhận diện</string>
     <string name="timings_description">Áp dụng cho lõi gesture. Backend chưa xác minh sẽ không được kích hoạt bởi các tùy chỉnh này.</string>
-    <string name="double_ms">Nhấn đúp: %1$d ms</string>
+    <string name="double_ms">Khoảng cách nhấn liên tiếp: %1$d ms</string>
     <string name="long_ms">Nhấn giữ: %1$d ms</string>
     <string name="chord_ms">Cửa sổ tổ hợp: %1$d ms</string>
     <string name="debounce_ms">Chống dội: %1$d ms</string>
@@ -135,14 +135,14 @@
     <string name="current_profile_only">Chỉ hồ sơ hiện tại; không giả định quyền giữa các user/profile.</string>
     <string name="test_action">Thử hành động ngay</string>
     <string name="test_action_confirmation">Thực hiện ngay: %1$s. Thao tác này sẽ tác động thiết bị hoặc mở app đã chọn.</string>
-    <string name="root_connected">Root / Vector · Plus đã kết nối</string>
-    <string name="root_disconnected">Root / Vector · Chưa kết nối backend</string>
+    <string name="root_connected">Dịch vụ phím · Đã kết nối</string>
+    <string name="root_disconnected">Dịch vụ phím · Chưa kết nối</string>
     <string name="root_full_coverage">Bật riêng từng kiểu nhấn Plus. Khi có rule hoạt động, kiểu nhấn chưa gán sẽ không làm gì.</string>
     <string name="recorder_root_experimental">Ghi âm MP3 · có thông báo và nút dừng</string>
     <string name="photo_confirmed">Đã nhận xác nhận ảnh mới từ MediaStore; camera được giữ mở.</string>
     <string name="power_backend_missing">Power nhấn đúp chưa có backend. Chỉ lưu bản nháp.</string>
-    <string name="root_checking">Root / Vector · Đang kiểm tra quyền và scope…</string>
-    <string name="root_authorized_waiting">Root / Vector · Quyền và scope hợp lệ, Plus chưa kết nối</string>
+    <string name="root_checking">Dịch vụ phím · Đang kiểm tra quyền…</string>
+    <string name="root_authorized_waiting">Đã có quyền Root · Đang chờ dịch vụ phím</string>
     <string name="root_authorization_failed">Chưa xác minh được Root / scope. Kiểm tra quyền Root, module OPlusKeyControl và scope system trong Vector.</string>
     <string name="observation_only">Chế độ này chưa hỗ trợ thay thế thao tác nút.</string>
     <string name="remap_off_after_mode_change">Remap đang tắt. Bật lại ở Tổng quan khi sẵn sàng.</string>
@@ -159,7 +159,7 @@
     <string name="show_details">Xem giải thích</string>
     <string name="shizuku_requesting">Đang chờ cấp quyền Shizuku…</string>
     <string name="shizuku_denied">Quyền Shizuku bị từ chối hoặc không gửi được yêu cầu.</string>
-    <string name="ui_connection">Quyền và kết nối</string>
+    <string name="ui_connection">Kết nối và quyền</string>
     <string name="ui_battery">Chạy nền và pin</string>
     <string name="ui_about">Giới thiệu</string>
     <string name="ui_delete_rule">Xóa thao tác này?</string>
@@ -211,8 +211,8 @@
     <string name="ui_current_action_hint">Bản xem trước theo rule, chưa phải kết quả thực thi.</string>
     <string name="ui_cancel_changes">Bỏ các thay đổi?</string>
     <string name="ui_camera_trial">Cần thử trước khi bật</string>
-    <string name="power_double_experimental">Power nhấn đúp · thử nghiệm. Nhấn đơn chờ cửa sổ nhiều lần của hệ thống; nhấn giữ và khẩn cấp vẫn do OEM xử lý.</string>
-    <string name="chord_plus_first">Plus + Volume: giữ một nút rồi nhấn nút còn lại, nhận cả hai thứ tự. Volume trước có thể đổi âm lượng ban đầu. Plus + Nguồn: giữ Plus trước. Khi có rule tổ hợp, Plus nhấn giữ chạy lúc thả. Nguồn + Volume: trong 150 ms, cả hai thứ tự.</string>
+    <string name="power_double_experimental">Nhấn đúp/ba lần nguồn · phụ thuộc hỗ trợ của ROM</string>
+    <string name="chord_plus_first">Giữ Plus rồi nhấn nguồn hoặc âm lượng. Nhận cả hai thứ tự; nếu nhấn nguồn/âm lượng trước thì thao tác gốc có thể xảy ra. Khi có tổ hợp đang bật, nhấn giữ Plus thực hiện khi thả nút.</string>
     <string name="advanced_backend_missing">Hook này chưa sẵn sàng trên backend hiện tại.</string>
     <string name="ui_configurable">Có thể cấu hình</string>
     <string name="inspector_title">Kiểm tra Activity / UI</string>
@@ -260,14 +260,14 @@
     <string name="nd_save_hint">Chỉ chạy khi đủ quyền và đúng lịch.</string>
     <string name="nd_chord_help">Cách bấm tổ hợp</string>
     <string name="nd_mode">Chế độ kết nối</string>
-    <string name="nd_actual_status">Trạng thái thực tế</string>
+    <string name="nd_actual_status">Trạng thái dịch vụ</string>
     <string name="nd_play">Mở bản ghi</string>
     <string name="nd_key">Nút</string>
     <string name="nd_press">Kiểu nhấn</string>
     <string name="ux_assignments">Gán phím</string>
     <string name="ux_utilities">Tiện ích</string>
     <string name="ux_settings">Cài đặt</string>
-    <string name="ux_master">Tùy biến phím</string>
+    <string name="ux_master">Phím tắt</string>
     <string name="ux_choose_trigger">Chọn thao tác</string>
     <string name="ux_action">Hành động</string>
     <string name="ux_choose_action">Chọn hành động</string>
@@ -286,7 +286,7 @@
     <string name="ux_test_tools">Thử nhanh</string>
     <string name="ux_recordings">Bản ghi âm</string>
     <string name="ux_inspector">Kiểm tra màn hình</string>
-    <string name="ux_connection">Kết nối &amp; quyền</string>
+    <string name="ux_connection">Dịch vụ phím</string>
     <string name="ux_background">Hoạt động nền</string>
     <string name="ux_sensitivity">Độ nhạy thao tác</string>
     <string name="ux_management">Quản lý</string>
@@ -298,4 +298,13 @@
     <string name="ux_utilities_help">Bản ghi âm đã lưu, kiểm tra màn hình và thử từng hành động.</string>
     <string name="haptic_confirmation">Rung xác nhận</string>
     <string name="haptic_confirmation_hint">Rung ngay khi nhận ra thao tác</string>
+    <string name="shortcuts_active">Đang hoạt động</string>
+    <string name="shortcuts_paused">Đã tạm dừng</string>
+    <string name="service_disconnected">Chưa kết nối</string>
+    <string name="unassigned">Chưa gán</string>
+    <string name="triple_click">Nhấn ba lần</string>
+    <string name="open_app_hint">Mở trang chính của ứng dụng</string>
+    <string name="open_activity_hint">Chọn một màn hình hoặc chức năng trong ứng dụng</string>
+    <string name="choose_activity_app">Ứng dụng cho Activity</string>
+    <string name="shortcuts_waiting">Đang chờ kết nối</string>
 </resources>
